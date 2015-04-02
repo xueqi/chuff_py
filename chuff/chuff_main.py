@@ -4,9 +4,8 @@
 import os
 import shutil
 from utils.config import *
-from utils.util import get_server
 from project import Project
-from server import Server
+from server import Server, get_server
 
 class Chuff(object):
     '''
@@ -15,12 +14,25 @@ class Chuff(object):
         2. call functions that take optional parameter MPI=True to run on multiple CPUs
 
     '''
-    def __init__(self, server = None, project = None):
+    def __init__(self, server = None, project = None, options = None):
         '''
             @param server The server where the script to run. Default None, to run on local machine.
+            @param project The chuff project that the chuff command will run in. Default get current directory as project directory.
+            @param options additional options that will pass to all the functions chuff will call
         '''
         self.server = get_server()
-        pass
+        self.project = project
+        if self.project is None:
+            self.project = Project.open()
+        # options comes first from the server config, then project config, then options parameters.
+        self.options = self.server.get_options()
+        if self.project:
+            self.options.update(self.project.get_options())
+        if options is not None:
+            self.options.update(options)
+        self.script_dir = []
+        if 'CHUFF_COMMAND_DIR' in globals():
+            self.script_dir.append(globals()['CHUFF_COMMAND_DIR'])
 
     def get_script_type(self, script_name):
         '''
@@ -39,37 +51,52 @@ class Chuff(object):
             return 'octave'
         return "unknown"
 
-    @classmethod
-    def run(cls, script_args, job_type = "by_arg", qsub = 0, max_cpus = 1, nodes = 1, parjob_nuke = 0,
-            queue_name = 'sindelar', min_cores = 1, test = 0, group_mts = 0, filesync_pause = 120,
-            q_debug = 0, background = 0
-            ):
+    def run(self, *script_args, **kwargs):
         '''
             run jobs as in chuff3/command/chuff.
-            must run in project directory with chuff_parameters.m
+            must run in project directory with chuff_parameters.m.
         '''
+
         if len(script_args) > 0:
             job_script = script_args[0]
         else:
-            print_avaiable_commands()
+            self.print_avaiable_commands()
+        chuff_extra_args = ""
+        for key, value in kwargs.items():
+            chuff_extra_args += " %s=%s" % (key, value)
+        from copy import deepcopy
+        options = {}
+        for key, value in self.options.items():
+            options[key] = value
+        if kwargs is not None:
+            options.update(kwargs)
 
-
-        if job_type in ["by_filaments", "by_micrograph"] and len(script_args) > 1:
-            raise Exception("ERROR: please do not give a name list for 'job_type=by_filament' or 'job_type=by_micrograph'\n%s" % ", ".join(script_args[1:]))
+        job_type = options.get('job_type', 'by_filaments')
+        qsub = options.get('qsub', 0)
+        nodes = options.get('nodes', 1)
+        if qsub == 0:
+            nodes = 1
+        max_cpus = options.get('max_cpu', 1)
+        cores = options.get('cores', 1)
+        parjob_nuke = options.get('parjob_nuke', 0)
+        queue_name = options.get('queue_name', self.server.get_default('queue_name', None))
+        background = options.get('background', 0)
+        test = options.get('test', 0)
+        q_debug = options.get('q_debug', 0) # if debug qsub?
+        filesync_pause = options.get('filesync_pause', 120) # file sync for parallel jobs. Used with nodes > 1
 
         parameter_file = "chuff_parameters.m"
+
+        if job_type in ["by_filaments", "by_micrograph"] and len(script_args) > 1:
+            raise Exception("ERROR: please do not give a name list for 'job_type=by_filaments' or 'job_type=by_micrograph'\n%s" % ", ".join(script_args[1:]))
+
         chuff_params_copy = "%s_saved.%s" % os.path.splitext(parameter_file)
 
-        if not os.path.exists(chuff_params_copy) and os.path.exists(project.param_file()):
-                shutil.copy(parameter_file, chuff_params_copy)
+        # copy the current parameter file before this run,
+        if not os.path.exists(chuff_params_copy) and os.path.exists(self.project.param_file()):
+            shutil.copy(parameter_file, chuff_params_copy)
 
-
-        if qsub == 0: nodes = 1
-        max_cpus = options.max_cpus  # max_cpus defaults to 1
-        cores = options.cores
-        parjob_nuke = options.parjob_nuke
-
-        new_num_nodes_cores = cls._get_new_num_nodes_cores(nodes, cores, max_cpus)
+        new_num_nodes_cores = self._get_new_num_nodes_cores(nodes, cores, max_cpus)
         if new_num_nodes_cores[0] != nodes or new_num_nodes_cores[1] != cores:
             print 'Max number of CPUs exceeded; clipping to', new_num_nodes_cores[0],'nodes,', new_num_nodes_cores[1], 'cores.'
             print '(use max_cpus=n to override; you can do this in chuff_machine_parameters.m)'
@@ -120,7 +147,6 @@ class Chuff(object):
             if not os.path.exists(os.path.join(task_dir, d)):
                 os.mkdir(os.path.join(task_dir, d))
 
-        job_type = options.job_type
         if job_type == "one_job":
             one_job = 1
         else:
@@ -145,17 +171,17 @@ class Chuff(object):
         elif job_type != "one_job":
             raise Exception("ERROR: unrecognized job type '%s'..." % job_type)
 
-        os.chdir(orig_dir)
+        os.chdir(self.project.workdir)
 
         qsub_cores = cores
-        min_cores = options.min_cores
+        min_cores = options.get('min_cores', 1)
         if qsub_cores < min_cores and qsub != 0:
             qsub_cores = min_cores
 
         if one_job == 1:
             qsub_arg = "-lnodes=%d:ppn=%d" % (nodes, cores)
             qsub_nodes = 1
-            open('%s/%s_1_1.txt' % (orig_dir, list_header), 'w')
+            open('%s/%s_1_1.txt' % (self.project.workdir, list_header), 'w')
         else:
             qsub_qrg = "-lnodes=1:ppn=%d" % qsub_cores
             qsub_nodes = nodes
@@ -163,7 +189,7 @@ class Chuff(object):
             for list_file in os.listdir("%s_*.txt"):
                 pass
                 #TODO:
-        print "Task : %s/%s %s" % (task_dir, job_script, chuff_extra_args)
+        #print "Task : %s/%s %s" % (task_dir, job_script, chuff_extra_args)
 
         if len(script_args) > 1:
             num_targets = len(script_args) - 1
@@ -179,33 +205,30 @@ class Chuff(object):
             os.mkdir("%s/q_log_files" % task_dir)
         if not os.path.exists("%s/proc_log_files" % task_dir):
             os.mkdir("%s/proc_log_files")
-        if not os.path.exists(job_script):
-            job_script = "%s/commands/%s" % (chuff_dir, os.path.basename(job_script))
-        if not os.path.exists(job_script):
+        job_script_path = self.project.get_script_path(job_script)
+        if job_script_path is None:
             raise Exception("Error: cannot find the script: %s" % os.path.basename(job_script))
 
-        shutil.copy(job_script, os.path.join(task_dir, os.path.basename(job_script)))
+        shutil.copy(job_script_path, os.path.join(task_dir, os.path.basename(job_script_path)))
 
         qnode = 1
         while qnode <= qsub_nodes:
             qscript = "%s_%d.csh" % (qsub_header, qnode)
             script_params = {
-                "orig_dir" : orig_dir,
+                "orig_dir" : self.project.workdir,
                 "task_dir" : task_dir,
-                "qscript"   : os.path.basename(os.path.splitext(qscript)),
+                "qscript"   : os.path.basename(os.path.splitext(qscript)[-1]),
                 "qsub" : qsub,
                 "background" : background,
                 "qsub_cores" : qsub_cores,
                 "list_header" : list_header,
                 "qnode" : qnode,
-                "qcore" : qcore,
-                "job_script" : job_script,
+                "job_script" : job_script_path,
                 "chuff_extra_args" : chuff_extra_args,
-
-                             }
+            }
             script_tpl = '''#!/bin/csh
 cd ${orig_dir}
-if(-e ${task_dir}/status_files/${qscript:r:t}_finished) /bin/rm ${task_dir}/status_files/${qscript:r:t}_run
+if(-e ${task_dir}/status_files/${qscript}_finished) /bin/rm ${task_dir}/status_files/${qscript}_run
 
 set output_interactive = 0
 if($qsub == 1) set output_interactive = 1
@@ -256,7 +279,7 @@ endif
 
 wait
 
-''')
+'''
             from string import Template
             open(qscript,'w').write(Template(script_tpl).substitute(script_params))
             #=== ====================================================================
@@ -265,10 +288,12 @@ wait
             if test == 0:
                 if qsub == 0:
                     if background == 0:
+                        pass
                         #===========================================================
                         # (source $qscript)
                         #===========================================================
-                        else:
+                    else:
+                        pass
                             #===========================================================
                             # (source $qscript >& /dev/null &)
                             #===========================================================
@@ -277,7 +302,7 @@ wait
                     submit_script = '''/usr/bin/qsub %s -q %s -d %s \
 -e %s/q_log_files -o %s/q_log_files \
 -N %s:%d \
-%s''' % (qsub_arg, queue_name, orig_dir, task_dir, task_dir, os.path.basename(task_dir), qnode, qscript)
+%s''' % (qsub_arg, queue_name, self.project.workdir, task_dir, task_dir, os.path.basename(task_dir), qnode, qscript)
                     if q_debug == 1:
                         print submit_script
                         os.system(submit_script)
@@ -287,29 +312,37 @@ wait
                 else:
                     print submit_script
 
-                    qnode = qnode + 1
+            qnode = qnode + 1
         #=======================================================================
         # END while qnode <= qsub_nodes:
         #=======================================================================
 
 #===============================================================================
-#         # Check if queued jobs are done
-#         #  Note that this method will fail to complete if the queued jobs
+#         #   Check if queued jobs are done
+#         #   Note that this method will fail to complete if the queued jobs
 #         #   are deleted; in this case the status files will never be
 #         #   created!
 #===============================================================================
+
+        #=======================================================================
+        # Basic idea to check if job done is to check the status_file generated by the submit_script.
+        # the return status will be written to the status_file called qsub_<node>_<core>_status.
+        # So if the file exists, this would think the job is done. So carefully to check when the file should generate
+        #=======================================================================
+        print qsub, test, background
         if qsub != 0 and test == 0 and background == 0:
             print "Wating for job to finish"
             print "Status files: %s/status_files/qsub_<node>_<core>_status" % task_dir
             print "Number of  nodes: %d" % nodes
             print "Number of cores: %d" % qsub_cores
 
-            q_done == 0
+            q_done = 0
+            print qsub_cores, qsub_nodes
             while q_done == 0:
                 q_done = 1
                 qnode = 1
-                qcore = 1
                 while qnode <= qsub_nodes:
+                    qcore = 1
                     while qcore <= qsub_cores:
                         q_status_file = "%s/status_files/qsub_%d_%d_status" % (task_dir, qnode, qcore)
                         if not os.path.exists(q_status_file):
@@ -317,11 +350,12 @@ wait
                         qcore += 1
                     qnode += 1
                 if not q_done:
+                    from time import sleep
                     sleep(1)
-            set return_status = 0
+            return_status = 0
             qnode = 1
-            qcore = 1
             while qnode <= qsub_nodes:
+                qcore = 1
                 while qcore <= qsub_cores:
                     q_status_file = "%s/status_files/qsub_%d_%d_status" % (task_dir, qnode, qcore)
                     if os.path.exists(q_status_file):
@@ -348,7 +382,6 @@ wait
         if background != 0 and test == 0:
             print "job submitted in the background..."
 
-    @staticmethod
     def _get_new_num_nodes_cores(self, nodes, cores, max_cpus):
         if nodes * cores > max_cpus:
             new_nodes = nodes // cores
@@ -357,10 +390,19 @@ wait
                 new_cores = max_cpus
             else:
                 new_cores = cores
-                return new_nodes, new_cores
+            return new_nodes, new_cores
         else:
             return new_nodes, new_cores
 
+    def print_available_commands(self):
+        '''
+            print available commands from script dir
+        '''
+        for script_dir in self.script_dirs():
+            fnames = os.listdir(script_dir)
+            for fname in fnames:
+                if os.path.isfile(fname):
+                    print fname
 def main():
     '''
         main program to run chuff in command line
@@ -369,6 +411,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser('Tool for running "embarrassily parallel" jobs')
     parser.add_argument("job_script")
+    parser.add_argument("input_files", nargs = "*")
     parser.add_argument("--cores", type=int, default=16, help="Number of cores for each node")
     parser.add_argument("--nodes", type=int, default=1, help="Number of nodes for MPI")
     parser.add_argument("--parjob_nuke", type=int, default=0, help="") #TODO: what is this?
@@ -384,10 +427,19 @@ def main():
     parser.add_argument("--background", type=int, default=0, help="") #TODO: what is background?
 
     options = parser.parse_args()
-
-    Chuff.run(options)
+    args = []
+    kwargs = {}
+    # adapts chuff's command line style
+    args.append(options.job_script)
+    for ag in options.input_files:
+        args.append(ag)
+    for key, value in vars(options).items():
+        if key != "job_script" and key != "input_files":
+            kwargs[key] = value
+    Chuff().run(*args, **kwargs)
 
 
 
 if __name__ == "__main__":
+    Project.create()
     main()

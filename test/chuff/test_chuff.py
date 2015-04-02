@@ -1,4 +1,4 @@
-from chuff.chuff import Chuff
+from chuff.chuff_main import Chuff
 
 import unittest
 
@@ -9,26 +9,26 @@ class testChuff(unittest.TestCase):
         '''
         import tempfile
         self.workdir = tempfile.mkdtemp()
-        
+
     def tearDown(self):
         import os
         os.system('rm -rf %s' % self.workdir)
         unittest.TestCase.tearDown(self)
-        
-        
+
+
     def testChuffProgram(self):
         from chuff.project import Project
         project = Project.create(name = "testChuffProgram", workspace = self.workdir)
         import os
         os.chdir(project.workdir)
-        import chuff.chuff
-        program_file = chuff.chuff.__file__[:-1]
-        print program_file
+        import chuff.chuff_main
+        program_file = chuff.chuff_main.__file__
+        if program_file.endswith(".pyc"):
+            program_file = program_file[:-1]
         import subprocess
         p = subprocess.Popen(['python', program_file], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         stdout = p.stdout.read()
         stderr = p.stderr.read()
-        print stderr
         self.assertTrue("error: too few arguments" in stderr)
         p = subprocess.Popen(['python', program_file, 'test_script.py'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         stdout = p.stdout.read()
