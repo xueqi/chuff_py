@@ -1,5 +1,5 @@
 '''
-    Chuff Main script
+    Chuff Main script. Can be used as commands to submit jobs for chuff scripts, and also has Chuff class which can be called from other scripts
 '''
 import os
 import shutil
@@ -10,9 +10,15 @@ from server import Server
 
 class Chuff(object):
     '''
-        Chuff class, handles everything same as chuff command in chuff3/commands
+        Chuff class
+        1. handles everything same as chuff command in chuff3/commands, which should be compatible with csh scripts.
+        2. call functions that take optional parameter MPI=True to run on multiple CPUs
+
     '''
-    def __init__(self):
+    def __init__(self, server = None, project = None):
+        '''
+            @param server The server where the script to run. Default None, to run on local machine.
+        '''
         self.server = get_server()
         pass
 
@@ -155,6 +161,7 @@ class Chuff(object):
             qsub_nodes = nodes
 
             for list_file in os.listdir("%s_*.txt"):
+                pass
                 #TODO:
         print "Task : %s/%s %s" % (task_dir, job_script, chuff_extra_args)
 
