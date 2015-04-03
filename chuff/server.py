@@ -1,19 +1,26 @@
-'''
+'''@package Server
     Server that handles multi process
+
+    A server represent a machine that has certain configuration that will run
+    program in different way than other. The server is mainly used in the
+    manage running of script, read and write files.
 '''
 
 def get_server():
     '''
         get server to run at.
-        default return local machine.
-        if 'server_name' provided in config.py file, then server with server_name will be return if found in server_configs directory
+
+    default return local machine.
+    if 'server_name' provided in config.py file, then server with server_name
+    will be return if found in server_configs directory
 
     '''
     return Server()
 
 class Server(object):
     '''
-        server object handles the parallel jobs. if server_type is localhost, no parallel will be used.
+        server object handles the parallel jobs. if server_type is localhost,
+         no parallel will be used.
         @param server_type default 'localhost'. If use ssh, server_type should be 'remote'
     '''
     def __init__(self, name = 'localhost', server_type = 'localhost'):
@@ -48,3 +55,20 @@ class Server(object):
             if key.startswith("__"): continue
             options[key] = value
         return options
+
+    def check_status(self, pid):
+        '''
+            check if the process with pid is running
+            @param pid The process id that is checked.
+                If on a cluster, the pid should be the job id returned by qsub
+        '''
+        if self.server_type == "localhost":
+            try:
+                import os
+                os.kill(pid, 0)
+            except OSError:
+                return False
+            else:
+                return True
+        elif self.server_type == "pbs":
+            return False
