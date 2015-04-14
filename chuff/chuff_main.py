@@ -6,7 +6,7 @@ import shutil
 from utils.config import *
 from project import Project
 from server import Server, get_server
-
+from chuff.script_runner import TcshScriptRunner, PBSScriptRunner
 class Chuff(object):
     '''
         Chuff class
@@ -287,17 +287,11 @@ wait
             #=======================================================================
             if test == 0:
                 if qsub == 0:
-                    if background == 0:
-                        pass
-                        #===========================================================
-                        # (source $qscript)
-                        #===========================================================
-                    else:
-                        pass
-                            #===========================================================
-                            # (source $qscript >& /dev/null &)
-                            #===========================================================
+                    sc = TcshScriptRunner()
+                    sc.run(qscript, workdir = self.project.workdir, background = background)
+
                 else:
+                    sc = PBSScriptRunner()
                     print "Submitting: %s" % qscript
                     submit_script = '''/usr/bin/qsub %s -q %s -d %s \
 -e %s/q_log_files -o %s/q_log_files \

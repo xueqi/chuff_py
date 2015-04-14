@@ -1,0 +1,230 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Auto Generated Documentation &mdash; chuff_py 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="chuff_py 0.1 documentation" href="index.html" />
+    <link rel="prev" title="Project Summary" href="project.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="project.html" title="Project Summary"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">chuff_py 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="auto-generated-documentation">
+<h1>Auto Generated Documentation<a class="headerlink" href="#auto-generated-documentation" title="Permalink to this headline">¶</a></h1>
+<span class="target" id="module-chuff_main"></span><p>Chuff Main script. Can be used as commands to submit jobs for chuff scripts, and also has Chuff class which can be called from other scripts</p>
+<dl class="class">
+<dt id="chuff_main.Chuff">
+<em class="property">class </em><tt class="descclassname">chuff_main.</tt><tt class="descname">Chuff</tt><span class="sig-paren">(</span><em>server=None</em>, <em>project=None</em>, <em>options=None</em><span class="sig-paren">)</span><a class="headerlink" href="#chuff_main.Chuff" title="Permalink to this definition">¶</a></dt>
+<dd><p>Chuff class
+1. handles everything same as chuff command in chuff3/commands, which should be compatible with csh scripts.
+2. call functions that take optional parameter MPI=True to run on multiple CPUs</p>
+<dl class="method">
+<dt id="chuff_main.Chuff.get_script_type">
+<tt class="descname">get_script_type</tt><span class="sig-paren">(</span><em>script_name</em><span class="sig-paren">)</span><a class="headerlink" href="#chuff_main.Chuff.get_script_type" title="Permalink to this definition">¶</a></dt>
+<dd><p>get script type, csh or python or octave?
+TODO: more precise detection</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="chuff_main.Chuff.print_available_commands">
+<tt class="descname">print_available_commands</tt><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#chuff_main.Chuff.print_available_commands" title="Permalink to this definition">¶</a></dt>
+<dd><p>print available commands from script dir</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="chuff_main.Chuff.run">
+<tt class="descname">run</tt><span class="sig-paren">(</span><em>*script_args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#chuff_main.Chuff.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>run jobs as in chuff3/command/chuff.
+must run in project directory with chuff_parameters.m.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="chuff_main.main">
+<tt class="descclassname">chuff_main.</tt><tt class="descname">main</tt><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#chuff_main.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>main program to run chuff in command line</p>
+</dd></dl>
+
+<span class="target" id="module-server"></span><p>&#64;package Server
+Server that handles multi process</p>
+<p>A server represent a machine that has certain configuration that will run
+program in different way than other. The server is mainly used in the
+manage running of script, read and write files.</p>
+<dl class="class">
+<dt id="server.Server">
+<em class="property">class </em><tt class="descclassname">server.</tt><tt class="descname">Server</tt><span class="sig-paren">(</span><em>name='localhost'</em>, <em>server_type='localhost'</em><span class="sig-paren">)</span><a class="headerlink" href="#server.Server" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="docutils">
+<dt>server object handles the parallel jobs. if server_type is localhost,</dt>
+<dd>no parallel will be used.</dd>
+</dl>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>server_type</strong> (<em>str</em>) &#8211; default &#8216;localhost&#8217;. If use ssh, server_type should be &#8216;remote&#8217;</td>
+</tr>
+</tbody>
+</table>
+<dl class="method">
+<dt id="server.Server.check_status">
+<tt class="descname">check_status</tt><span class="sig-paren">(</span><em>pid</em><span class="sig-paren">)</span><a class="headerlink" href="#server.Server.check_status" title="Permalink to this definition">¶</a></dt>
+<dd><p>check if the process with pid is running</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>pid</strong> (<em>int</em>) &#8211; The process id that is checked.
+If on a cluster, the pid should be the job id returned by qsub</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="server.Server.get_default">
+<tt class="descname">get_default</tt><span class="sig-paren">(</span><em>var_name</em>, <em>default_value=None</em><span class="sig-paren">)</span><a class="headerlink" href="#server.Server.get_default" title="Permalink to this definition">¶</a></dt>
+<dd><p>get value for variable var_name, without exception</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>var_name</strong> (<em>str</em>) &#8211; the variable name to retrieve</li>
+<li><strong>default_value</strong> &#8211; The default value to return if no this attr</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="server.Server.get_options">
+<tt class="descname">get_options</tt><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#server.Server.get_options" title="Permalink to this definition">¶</a></dt>
+<dd><p>return the options for the server</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="server.Server.load_from_config">
+<tt class="descname">load_from_config</tt><span class="sig-paren">(</span><em>server_name</em><span class="sig-paren">)</span><a class="headerlink" href="#server.Server.load_from_config" title="Permalink to this definition">¶</a></dt>
+<dd><p>load config from file name. config file is a python script that contains global variable for</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>server_name</strong> (<em>str</em>) &#8211; The name of the server.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">None. if no server config with name server_name, load Nothing</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="server.get_server">
+<tt class="descclassname">server.</tt><tt class="descname">get_server</tt><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#server.get_server" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div>get server to run at.</div></blockquote>
+<p>default return local machine.
+if &#8216;server_name&#8217; provided in config.py file, then server with server_name
+will be return if found in server_configs directory</p>
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="project.html"
+                        title="previous chapter">Project Summary</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/code.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="project.html" title="Project Summary"
+             >previous</a> |</li>
+        <li><a href="index.html">chuff_py 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015, Xueqi Liu.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3a0.
+    </div>
+  </body>
+</html>

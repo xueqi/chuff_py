@@ -5,6 +5,8 @@
     program in different way than other. The server is mainly used in the
     manage running of script, read and write files.
 '''
+import logging
+logging.basicConfig()
 
 def get_server():
     '''
@@ -21,7 +23,8 @@ class Server(object):
     '''
         server object handles the parallel jobs. if server_type is localhost,
          no parallel will be used.
-        @param server_type default 'localhost'. If use ssh, server_type should be 'remote'
+
+        :param str server_type: default 'localhost'. If use ssh, server_type should be 'remote'
     '''
     def __init__(self, name = 'localhost', server_type = 'localhost'):
         self.name = name
@@ -32,8 +35,9 @@ class Server(object):
     def load_from_config(self, server_name):
         '''
             load config from file name. config file is a python script that contains global variable for
-            @param server_name The name of the server.
-            @return Server instance. if no server config with name server_name, load Nothing
+
+            :param str server_name: The name of the server.
+            :return: None. if no server config with name server_name, load Nothing
         '''
         try:
             svr = __import__('chuff.includes.server_configs._global_', globals(), locals(), ['_global_'], -1)
@@ -44,12 +48,22 @@ class Server(object):
                 if not key.startswith("__"): # exclude built-in values
                     self.__dict__[key] = value
         except ImportError:
-            pass
+            logging.warning("Can not load config for server %s. Use default config" % server_name)
+
     def get_default(self, var_name, default_value = None):
+        '''
+            get value for variable var_name, without exception
+
+            :param str var_name: the variable name to retrieve
+            :param default_value: The default value to return if no this attr
+        '''
         if var_name not in self.__dict__: return default_value
         return getattr(self, var_name)
 
     def get_options(self):
+        '''
+            return the options for the server
+        '''
         options = {}
         for key, value in self.__dict__.items():
             if key.startswith("__"): continue
@@ -59,7 +73,8 @@ class Server(object):
     def check_status(self, pid):
         '''
             check if the process with pid is running
-            @param pid The process id that is checked.
+
+            :param int pid: The process id that is checked.
                 If on a cluster, the pid should be the job id returned by qsub
         '''
         if self.server_type == "localhost":
