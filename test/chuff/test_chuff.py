@@ -1,7 +1,7 @@
 from chuff.chuff_main import Chuff
 
 import unittest
-
+@unittest.skip
 class testChuff(unittest.TestCase):
     def setUp(self):
         '''
