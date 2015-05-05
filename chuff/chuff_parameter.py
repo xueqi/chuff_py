@@ -1,5 +1,6 @@
 from collections import OrderedDict
-import re
+
+
 class ChuffParameter(object):
     '''
         Chuff Parameter class.

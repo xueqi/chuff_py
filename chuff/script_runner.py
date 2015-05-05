@@ -9,17 +9,30 @@ class ScriptRunner(object):
     def __init__(self, server =  None):
         self.server = server
 
-
 class TcshScriptRunner(ScriptRunner):
     '''
         The runner object for run a tcsh script.
     '''
     def __init__(self, server = None):
         ScriptRunner.__init__(self, server)
+        self.workdir = "."
+        self.script = ""
+    def get_exec(self):
+        return "/bin/csh"
 
-    def run(self, script, workdir = ".", background = False, stdout = None, stderr = None):
+    def get_script(self):
+        return self.script
+
+    def get_workdir(self):
+        return self.workdir
+
+    def set_envs(self):
+        pass
+
+    def run(self, background = False, stdout = None, stderr = None):
         '''
-            Run a script file with tcsh shell
+            Run a script file with tcsh shell.
+            Basically the program set the
 
             :param str script: the script file to run. Must exists
             :param str workdir: the  workdir
@@ -29,10 +42,13 @@ class TcshScriptRunner(ScriptRunner):
 
             :return: if background is True, return the process object, else return the return code
         '''
-        import subprocess
+        import subprocess, os
 
-        p = subprocess.Popen(["/bin/csh", script], stdout = stdout,
-                             stderr = stderr)
+        self.set_envs()
+        os.chdir(self.get_workdir())
+        print stdout, stderr
+        print self.get_exec(), self.get_script()
+        p = subprocess.Popen([self.get_exec(), self.get_script()], stdout = stdout, stderr = stderr)
         if background:
             return p
         else:

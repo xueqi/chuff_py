@@ -16,9 +16,9 @@ class Chuff(object):
     '''
     def __init__(self, server = None, project = None, options = None):
         '''
-            @param server The server where the script to run. Default None, to run on local machine.
-            @param project The chuff project that the chuff command will run in. Default get current directory as project directory.
-            @param options additional options that will pass to all the functions chuff will call
+            :param Server server: The server where the script to run. Default None, to run on local machine.
+            :param Project project: The chuff project that the chuff command will run in. Default get current directory as project directory.
+            :param dict options: additional options that will pass to all the functions chuff will call
         '''
         self.server = get_server()
         self.project = project
