@@ -284,7 +284,7 @@ if __name__ == "__main__":
     #    an output directory
     import argparse, os
 
-    parser = argparse.ArgumentParser(description="Frealign commandline wrapper")
+    parser = argparse.ArgumentParser(description="Frealign commandline wrapper.\nUse: frealign.py --params=frealign_bin1_gold1/chuck_apomyoIb_201501_5.par --output_dir=frealign_bin1_gold1 --apix=4.35 --ptcls=frealign_bin1_gold1/frealign_image_stack.hed --dp=28.14 --dphi=167.1")
 
     parser.add_argument("--apix", type = float, default = 1.,
                         help = "Pixel size of the particles and the volume")
@@ -299,7 +299,7 @@ if __name__ == "__main__":
     parser.add_argument("--ptcls", help = "frealign input particles stack")
     parser.add_argument("--output_dir", default = ".",
                          help = "frealign output directory")
-    parser.add_help("frealign.py --params=frealign_bin1_gold1/chuck_apomyoIb_201501_5.par --output_dir=frealign_bin1_gold1 --apix=4.35 --ptcls=frealign_bin1_gold1/frealign_image_stack.hed --dp=28.14 --dphi=167.1")
+
 
     options = parser.parse_args()
 
