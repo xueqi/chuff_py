@@ -63,6 +63,7 @@ class Frealign(object):
         self.workdir = "."
 
         self.exec_file = "frealign"
+        self.cores = 16
 
     def run(self, project = None, server = None):
         from datetime import datetime
@@ -166,6 +167,7 @@ class Frealign(object):
         f.write("#!/bin/csh\n\n")
 
         f.write("cd %s\n" % os.path.join(os.getcwd(), self.workdir))
+        f.write("set OMP_NUM_THREADS %d\n" % self.cores)
         f.write("%s << EOF\n" % self.exec_file)
         f.write("\n".join(self.get_card_str_list()))
         f.write("\nEOF\n")
