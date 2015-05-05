@@ -153,6 +153,10 @@ class Frealign(object):
 
             card_num += 1
         return card_strs
+
+    def set_exec(self, exec_file):
+        self.exec_file = exec_file
+
     def write_frealign_input_file(self, input_file_name):
         '''
             Write frealign run script
@@ -299,7 +303,8 @@ if __name__ == "__main__":
     parser.add_argument("--ptcls", help = "frealign input particles stack")
     parser.add_argument("--output_dir", default = ".",
                          help = "frealign output directory")
-
+    parser.add_argument("--frealign_exec", default = None,
+                         help = "frealign executable, can be used to switch to mp version")
 
     options = parser.parse_args()
 
@@ -330,7 +335,10 @@ if __name__ == "__main__":
         ro = xsize / 2 - 1
     else:
         ro = options.rmax
-    dp = options.dp
+
+    if options.frealign_exec is not None:
+        fr.set_exec(options.frealign_exec)
+
     fr.set({
             "FINPAR" : os.path.join(os.getcwd(), input_params),
             "ILAST"  : n_ptcls,
