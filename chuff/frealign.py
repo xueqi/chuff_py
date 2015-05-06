@@ -67,7 +67,7 @@ class Frealign(object):
         self.cores = 16
         self.saves = []
 
-    def run(self, project = None, server = None):
+    def run(self, project = None, server = None, stdout = None):
         from datetime import datetime
         import os
         if server is None:
@@ -79,7 +79,7 @@ class Frealign(object):
             sr.script = script_file
             self.write_frealign_input_file(script_file)
             sr.tmp_dir = self.workdir
-            sr.run()
+            sr.run(stdout = stdout)
         self.cleanup()
 
     def cleanup(self):
@@ -494,7 +494,7 @@ if __name__ == "__main__":
             "ILAST"  : n_ptcls,
             "RO" : ro,
             "RISE" : options.dp,
-            "ALPHA" : options.dphi,
+            "ALPHA" : -options.dphi,
             "FINPAT1" : os.path.join(os.getcwd(), options.ptcls),
             "CS" : 2.7,
             "AKV" : 300,
@@ -508,7 +508,7 @@ if __name__ == "__main__":
             fr.set_exec(options.frealign_exec)
 
         #fr.set(d)
-
-        fr.run()
+        from datetime import datetime
+        fr.run(stdout = open('frealign_log_%s.log' % datetime.now(), 'w'))
     elif options.task == "refine":
         pass

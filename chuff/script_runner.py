@@ -46,8 +46,7 @@ class TcshScriptRunner(ScriptRunner):
 
         self.set_envs()
         os.chdir(self.get_workdir())
-        print stdout, stderr
-        print self.get_exec(), self.get_script()
+
         p = subprocess.Popen([self.get_exec(), self.get_script()], stdout = stdout, stderr = stderr)
         if background:
             return p
