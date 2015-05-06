@@ -65,6 +65,7 @@ class Frealign(object):
 
         self.exec_file = "frealign"
         self.cores = 16
+        self.saves = []
 
     def run(self, project = None, server = None):
         from datetime import datetime
@@ -79,6 +80,16 @@ class Frealign(object):
             self.write_frealign_input_file(script_file)
             sr.tmp_dir = self.workdir
             sr.run()
+        self.cleanup()
+
+    def cleanup(self):
+        '''
+            clean up the files
+        '''
+
+        # remove temp directory
+        if self.temp_dir is not None and os.path.exists(self.temp_dir) and self.temp_dir.startswith("/tmp/"):
+            os.system('rm -rf %s' % self.temp_dir)
 
     def set_cores(self, ncores):
         self.cores = ncores
@@ -173,7 +184,29 @@ class Frealign(object):
 
         self.params["RO"] =  int(particle_size * 1.5 / 2)
 
+    def setup_file_names(self):
+        '''
+            set up file names. if the file not in the saves list,
+            we just put it into the temp dir and remove later
+        '''
+        if self.temp_dir is None:
+            import tempfile
+            self.temp_dir = tempfile.mkdtemp()
+        output_root = self.output_root
+        output_root_bname = os.path.basename(output_root)
+        d = {}
+        fids = ["f3d", "fweigh", "fpha", "fpoi", "map1", "map2", "foutpar", "finpat2", "foutsh"]
+        for fid in fids:
+            if fid not in self.saves:
+                d[fid.upper()] = os.path.join(self.temp_dir, "%s_%s" % (output_root_bname, fid))
+            else:
+                d[fid.upper()] = "%s_%s" % (output_root, fid)
+        return d
 
+    def set_save(self,*args):
+        for fid in args:
+            if fid.lower() not in self.saves:
+                self.saves.append(fid.lower())
 
     def set_exec(self, exec_file):
         self.exec_file = exec_file
@@ -309,27 +342,41 @@ class FrealignReconstruct(Frealign):
         Frealign.__init__(self, params)
 
         import tempfile
-        temp_dir = tempfile.mkdtemp()
+        self.temp_dir = tempfile.mkdtemp()
+        self.set_save("f3d", "map1", "map2")
+        self.output_root = output_root
+        self.setup_file_names()
+
         d = {"FINPAR" : input_alignment,
-             "FOUTPAR" : os.path.join(temp_dir, "OUTPUT_PAR.par"),
-             "F3D" : "%s" % output_root,
-             "FWEIGH" : os.path.join(temp_dir, "OUTPUT_WEIGHT"),
-             "FPHA" : os.path.join(temp_dir, "OUTPUT_FPHA"),
-             "FPOI" : os.path.join(temp_dir, "OUTPUT_FPOI"),
-             "MAP1" : os.path.join(temp_dir, "OUTPUT_FSC1"),
-             "MAP2" : os.path.join(temp_dir, "OUTPUT_FSC2")
             }
+        d.update(self.setup_file_names())
         self.set(d)
 
 class FrealignRefineLocal(Frealign):
-    '''
-        Local refinement for frealign.
-    '''
 
-    def __init__(self):
-        Frealign.__init__(self)
-        self.params["IFLAG"] = 1
+    '''
+        Run an alignment using FREALIGN_EXEC.
+        alignment only: set IFLAG = 1, FINPAR to the input parameter file,
+        alignment needs:
+        1. input particles
+        2. input alignment file
+        3. output root
+        4. parameter dictionary
+    '''
+    def __init__(self, input_particles, input_alignment, output_root, params):
+        params["IFLAG"] = 1
+        Frealign.__init__(self, params)
 
+        import tempfile
+        self.temp_dir = tempfile.mkdtemp()
+        self.set_save("foutpar")
+        self.output_root = output_root
+        self.setup_file_names()
+
+        d = {"FINPAR" : input_alignment,
+            }
+        d.update(self.setup_file_names())
+        self.set(d)
 
 def resize_stack(input_stack, output_stack, new_size):
     '''
@@ -370,6 +417,8 @@ if __name__ == "__main__":
                         help = "Pixel size of the particles and the volume")
     parser.add_argument("--dp", type = float, default = 1.,
                         help = "helical rise of the filament")
+    parser.add_argument("--cores", type = int, default = 16,
+                        help = "number of cores")
     parser.add_argument("--dphi", type = float, default = 1.,
                         help = "helical rise of the filament")
     parser.add_argument("--rmax", type = float, default = -1,
@@ -394,57 +443,56 @@ if __name__ == "__main__":
     if options.task == "resize":
         if options.new_size is None or options.output_stack is None:
             raise Exception, "must provide new_size and output_stack option fo resizing"
-        resize_stack(options.ptcls, options.output_stack, options.new_size)
+        resize_stack(options.ptcls, options.output_stack, options.new_size, isvolume = options.volume)
         exit()
+    elif options.task == "reconstruct":
+        #if not os.path.exists(input_params):
+        #    raise Exception, "Can not find input paramaters: %s" % input_params
 
-    #TODO: remove the comment below
-    #if not os.path.exists(input_params):
-    #    raise Exception, "Can not find input paramaters: %s" % input_params
+        # get the number of total particles
+        from EMAN2 import EMUtil, EMData
+        n_ptcls = EMUtil.get_image_count(options.ptcls)
 
-    # get the number of total particles
-    from EMAN2 import EMUtil, EMData
-    n_ptcls = EMUtil.get_image_count(options.ptcls)
-    if n_ptcls <= 1:
-        data = EMData()
-        data.read_image(options.ptcls, 0, header_only=True)
-        n_ptcls = data.get_zsize()
-        del data
-    data = EMData()
-    data.read_image(options.ptcls, 0, True)
-    xsize = data.get_xsize()
-    if options.rmax <= 0:
-        ro = xsize / 2 - 1
-    else:
-        ro = options.rmax
+        if n_ptcls <= 1:
+            data = EMData()
+            data.read_image(options.ptcls, 0, header_only=True)
+            n_ptcls = data.get_zsize()
+            del data
+            data = EMData()
+            data.read_image(options.ptcls, 0, True)
+            xsize = data.get_xsize()
+        else:
+            data = EMData()
+            data.read_image(options.ptcls, 0, True)
+            xsize = data.get_xsize()
+        if options.rmax <= 0:
+            ro = xsize / 2 - 1
+        else:
+            ro = options.rmax
 
-    input_params = options.params
-    output_root = os.path.join(options.output_dir, os.path.splitext(os.path.basename(input_params))[0])
-    d = {
+        input_params = options.params
+        output_root = os.path.join(options.output_dir, os.path.splitext(os.path.basename(input_params))[0])
+
+        d = {
             "FINPAR" : os.path.join(os.getcwd(), input_params),
             "ILAST"  : n_ptcls,
             "RO" : ro,
             "RISE" : options.dp,
             "ALPHA" : options.dphi,
             "FINPAT1" : os.path.join(os.getcwd(), options.ptcls),
-            "FINPAT2" : os.path.join(os.getcwd(), "%s_pj.hed" % os.path.splitext(input_params)[0]),
-            "FOUTPAR" : os.path.join(os.getcwd(), "%s_out.par" % os.path.splitext(input_params)[0]),
-            "FOUTSH" : os.path.join(os.getcwd(), "%s.shft" % os.path.splitext(input_params)[0]),
-            "F3D" : os.path.join(os.getcwd(), os.path.splitext(input_params)[0]),
-            "FWEIGH" : os.path.join(os.getcwd(), "%s.wgt" % os.path.splitext(input_params)[0]),
-            "MAP1" : os.path.join(os.getcwd(), "%s_vol_fsc1" % os.path.splitext(input_params)[0]),
-            "MAP2" : os.path.join(os.getcwd(), "%s_vol_fsc2" % os.path.splitext(input_params)[0]),
-            "FPHA" : os.path.join(os.getcwd(), "%s_phasediffs" % os.path.splitext(input_params)[0]),
-            "FPOI" : os.path.join(os.getcwd(), "%s_pointspread" % os.path.splitext(input_params)[0]),
             "CS" : 2.7,
             "AKV" : 300,
             }
-    fr = FrealignReconstruct(options.ptcls, options.params, os.path.splitext(options.params)[0], d)
-    fr.workdir = "."
-    fr.set_pixel_size(options.apix)
-    fr.set_cores(32)
-    if options.frealign_exec is not None:
-        fr.set_exec(options.frealign_exec)
+        fr = FrealignReconstruct(options.ptcls, options.params, os.path.splitext(options.params)[0], d)
+        fr.set_save("reconstruct", "fsc1", "fsc2")
+        fr.workdir = "."
+        fr.set_pixel_size(options.apix)
+        fr.set_cores(options.cores)
+        if options.frealign_exec is not None:
+            fr.set_exec(options.frealign_exec)
 
-    #fr.set(d)
+        #fr.set(d)
 
-    fr.run()
+        fr.run()
+    elif options.task == "refine":
+        pass
