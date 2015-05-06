@@ -351,6 +351,22 @@ class FrealignReconstruct(Frealign):
             }
         d.update(self.setup_file_names())
         self.set(d)
+        output_volume = self.params["F3D"]
+        input_stack = self.params["datasets"][0]["FINPAT1"]
+        # will create a new output volume with the same size of the input particle stack
+        from EMAN2 import EMData, test_image
+        data = EMData()
+        data.read_image(input_stack, 0, True)
+        nx = data.get_xsize()
+        vol = test_image(1, size=(nx,nx,nx))
+        if self.params["CFORM"].upper() == "I":
+            ext = "hed"
+        elif self.params["CFORM"].upper() == "S":
+            ext = "spi"
+        elif self.params["CFORM"].upper() == "M":
+            ext = "mrc"
+        print "%s.%s" % (output_volume, ext)
+        vol.write_image("%s.%s" % (output_volume, ext), 0)
 
 class FrealignRefineLocal(Frealign):
 
