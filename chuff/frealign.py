@@ -27,7 +27,7 @@ class Frealign(object):
         FINPART1,
     '''
 
-    def __init__(self):
+    def __init__(self, params = {}):
         self.params = OrderedDict()
         self.exec_version = 8
         self.mp = True
@@ -60,6 +60,7 @@ class Frealign(object):
         self.card18 = ["FPOI"]
         self.set_default_params()
 
+        self.set(params)
         self.workdir = "."
 
         self.exec_file = "frealign"
@@ -78,6 +79,9 @@ class Frealign(object):
             self.write_frealign_input_file(script_file)
             sr.tmp_dir = self.workdir
             sr.run()
+
+    def set_cores(self, ncores):
+        self.cores = ncores
 
     def set_pixel_size(self, pixel_size):
         self.params["PSIZE"] = pixel_size
@@ -155,6 +159,22 @@ class Frealign(object):
             card_num += 1
         return card_strs
 
+    def set_box_size(self, box_size = -1):
+        if box_size == -1 or box_size is None: return
+        if self.params["RO"] <= 0 and self.params["PSIZE"] > 0:
+            self.params["RO"] = int(box_size * self.params["PSIZE"]  / 2 - 2)
+
+    def set_particle_size(self, particle_size = -1):
+        '''
+            set particle size related parameters
+        '''
+
+        if particle_size <= 0 or particle_size is None: return
+
+        self.params["RO"] =  int(particle_size * 1.5 / 2)
+
+
+
     def set_exec(self, exec_file):
         self.exec_file = exec_file
 
@@ -167,7 +187,7 @@ class Frealign(object):
         f.write("#!/bin/csh\n\n")
 
         f.write("cd %s\n" % os.path.join(os.getcwd(), self.workdir))
-        f.write("set OMP_NUM_THREADS %d\n" % self.cores)
+        f.write("setenv OMP_NUM_THREADS %d\n" % self.cores)
         f.write("%s << EOF\n" % self.exec_file)
         f.write("\n".join(self.get_card_str_list()))
         f.write("\nEOF\n")
@@ -278,10 +298,64 @@ class FrealignReconstruct(Frealign):
     '''
         Run A Reconstruction using FREALIGN_EXEC.
         Reconstruct only: set IFLAG = 0, FINPAR to the parameter file,
+        Reconstruct needs:
+        1. input particles
+        2. input alignment file
+        3. output root
+        4. parameter dictionary
     '''
+    def __init__(self, input_particles, input_alignment, output_root, params):
+        params["IFLAG"] = 0
+        Frealign.__init__(self, params)
+
+        import tempfile
+        temp_dir = tempfile.mkdtemp()
+        d = {"FINPAR" : input_alignment,
+             "FOUTPAR" : os.path.join(temp_dir, "OUTPUT_PAR.par"),
+             "F3D" : "%s" % output_root,
+             "FWEIGH" : os.path.join(temp_dir, "OUTPUT_WEIGHT"),
+             "FPHA" : os.path.join(temp_dir, "OUTPUT_FPHA"),
+             "FPOI" : os.path.join(temp_dir, "OUTPUT_FPOI"),
+             "MAP1" : os.path.join(temp_dir, "OUTPUT_FSC1"),
+             "MAP2" : os.path.join(temp_dir, "OUTPUT_FSC2")
+            }
+        self.set(d)
+
+class FrealignRefineLocal(Frealign):
+    '''
+        Local refinement for frealign.
+    '''
+
     def __init__(self):
         Frealign.__init__(self)
-        self.params["IFLAG"] = 0
+        self.params["IFLAG"] = 1
+
+
+def resize_stack(input_stack, output_stack, new_size):
+    '''
+        resize the stack to new_size. This is mainly clip the particle in the center. Used only for frealign.
+        Does not support mrc.
+
+        :param str input_stack: the input stack file name
+        :param str output_stack: the output stack file name
+        :param int new_size: the new size of the particles
+    '''
+    from EMAN2 import EMData, Region
+    ptcls = EMData.read_images(input_stack)
+    old_size = ptcls[0].get_xsize()
+    print old_size
+    l = (old_size - new_size) / 2
+
+    nptcls = len(ptcls)
+    if nptcls == 1: # this is a 3D stack
+        r = Region(l, l, 0, new_size, new_size, nptcls)
+    else:
+        r = Region(l, l, new_size, new_size)
+    for ptcl in ptcls:
+        ptcl.clip_inplace(r)
+    for i in range(len(ptcls)):
+        ptcl.write_image(output_stack, i)
+
 
 if __name__ == "__main__":
     # frealign reconstruct need :
@@ -308,15 +382,20 @@ if __name__ == "__main__":
     parser.add_argument("--frealign_exec", default = None,
                          help = "frealign executable, can be used to switch to mp version")
 
+    parser.add_argument("--task", default = "reconstruct", help = "tasks: reconstruct, alignment, resize")
+
+    # resize stack options
+
+    parser.add_argument("--new_size", default = None, type=int, help = "new size of the stack")
+    parser.add_argument("--output_stack", default = None, help = "output for the resized particles")
+
     options = parser.parse_args()
 
-    fr = FrealignReconstruct()
-    fr.workdir = "."
-    fr.input_stack = "frealign1_bin1_gold1/frealign_image_stack.hed"
-    fr.input_params = "frealign1_bin1_gold1/chuck_apomyoIb_201501_5.par"
-    fr.output_dir = "frealign1_bin1_gold1"
-    fr.set_pixel_size(options.apix)
-    input_params = options.params
+    if options.task == "resize":
+        if options.new_size is None or options.output_stack is None:
+            raise Exception, "must provide new_size and output_stack option fo resizing"
+        resize_stack(options.ptcls, options.output_stack, options.new_size)
+        exit()
 
     #TODO: remove the comment below
     #if not os.path.exists(input_params):
@@ -327,7 +406,7 @@ if __name__ == "__main__":
     n_ptcls = EMUtil.get_image_count(options.ptcls)
     if n_ptcls <= 1:
         data = EMData()
-        data.read_image(options.ptcls, header_only=True)
+        data.read_image(options.ptcls, 0, header_only=True)
         n_ptcls = data.get_zsize()
         del data
     data = EMData()
@@ -338,10 +417,9 @@ if __name__ == "__main__":
     else:
         ro = options.rmax
 
-    if options.frealign_exec is not None:
-        fr.set_exec(options.frealign_exec)
-
-    fr.set({
+    input_params = options.params
+    output_root = os.path.join(options.output_dir, os.path.splitext(os.path.basename(input_params))[0])
+    d = {
             "FINPAR" : os.path.join(os.getcwd(), input_params),
             "ILAST"  : n_ptcls,
             "RO" : ro,
@@ -359,7 +437,14 @@ if __name__ == "__main__":
             "FPOI" : os.path.join(os.getcwd(), "%s_pointspread" % os.path.splitext(input_params)[0]),
             "CS" : 2.7,
             "AKV" : 300,
+            }
+    fr = FrealignReconstruct(options.ptcls, options.params, os.path.splitext(options.params)[0], d)
+    fr.workdir = "."
+    fr.set_pixel_size(options.apix)
+    fr.set_cores(32)
+    if options.frealign_exec is not None:
+        fr.set_exec(options.frealign_exec)
 
-            })
+    #fr.set(d)
 
     fr.run()
