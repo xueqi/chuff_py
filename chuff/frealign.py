@@ -222,9 +222,8 @@ class FrealignBase(object):
 
     def run(self, project = None, server = None, stdout = None, background = False, workdir = ".", return_proc = True):
         sr = FrealignScriptRunner(self)
-        script_dir = workdir
         import tempfile
-        script_file = os.path.join(script_dir, tempfile.NamedTemporaryFile(prefix="frealign_script", delete=False))
+        script_file = tempfile.NamedTemporaryFile(prefix="frealign_script", delete=False)
         sr.script = script_file.name
         self.write_frealign_input_file(script_file, workdir = workdir)
         script_file.close()
