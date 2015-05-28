@@ -558,9 +558,7 @@ class FrealignActoMyosinVirginia(FrealignActin):
         foutsh = "foutsh"
         self.frealign.add_dataset(1, dstep, target, thresh, cs, akv, tx, ty, rrec, rmax1, rmax2,
                                    dfstd, rbfact, finpat1, finpat2, finpar, foutpar, foutsh)
-        from EMAN2 import EMUtil
-        nptcls = 1000
-        #nptcls = EMUtil.get_image_count(file_stack) #TODO: remove # for production
+        nptcls = len([line for line in open(param_file).read().strip().split("\n") if not line.strip().startswith("C")])
         self.set_parameter("last_particle", nptcls)
 
     def run(self):
