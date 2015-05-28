@@ -325,7 +325,7 @@ class Frealign8(FrealignBase):
         cards = []
         cards.append(self._create_card6(magnification, dstep, target, thresh, cs, akv, tx, ty))
         card = FrealignCard('card7')
-        card.add_param(None, rrec, "reconstruct_resolution", "RREC", float)
+        card.add_param(None, rrec, "reconstruct_resolution", "RREC", float, float_format="%.4f")
         card.add_param(None, rmax1, "refinement_resolution_max", "RMAX1", float)
         card.add_param(None, rmax2, "refinement_resolution_min", "RMAX2", float)
         card.add_param(None, dfstd, "defocus_uncertainty", "DFSTD", float)
