@@ -484,7 +484,7 @@ class Frealign9(Frealign8):
 
             if rtn_code != 0:
                 print "ERror with merge_3d: rtn=%d\n" % rtn_code
-class FrealignHelical():
+class FrealignHelical(object):
     def __init__(self, twist = 0, rise = 0, version = 9):
         self.version = version
         if version == 9:
@@ -497,6 +497,9 @@ class FrealignHelical():
         self.frealign.set_symmetry("H", twist, rise)
     def set_parameter(self, paramname, paramvalue):
         self.frealign.set_parameter(paramname, paramvalue)
+
+    def __str__(self):
+        return str(self.frealign)
 
 class FrealignActin(FrealignHelical):
     def __init__(self, output_dir = None, tag = "", version = 9):
@@ -552,9 +555,9 @@ class FrealignActoMyosinVirginia(FrealignActin):
         dfstd = 1000
         rbfact = 0
         finpat1 = file_stack
-        finpat2 = "finpat2"
+        finpat2 = os.path.join(self.output_dir,"finpat2")
         finpar = param_file
-        foutpar =output_param_file
+        foutpar = os.path.join(self.output_dir, output_param_file)
         foutsh = "foutsh"
         self.frealign.add_dataset(1, dstep, target, thresh, cs, akv, tx, ty, rrec, rmax1, rmax2,
                                    dfstd, rbfact, finpat1, finpat2, finpar, foutpar, foutsh)
