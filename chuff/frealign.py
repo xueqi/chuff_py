@@ -106,10 +106,10 @@ class FrealignScriptRunner(TcshScriptRunner):
 
 
 class FrealignBase(object):
-    def __init__(self):
+    def __init__(self, version = 0):
         self.cards = [] # contains the cards
         self.executable = None
-        pass
+        self.version = version
 
     def add_card(self, card):
         self.cards.append(card)
@@ -247,8 +247,8 @@ class FrealignBase(object):
 
 
 class Frealign8(FrealignBase):
-    def __init__(self):
-        FrealignBase.__init__(self)
+    def __init__(self, version = 8.):
+        FrealignBase.__init__(self, version)
         self.executable = "frealign_v8_mp_cclin"
     def initCards(self):
         card = FrealignCard("card1")
@@ -321,13 +321,15 @@ class Frealign8(FrealignBase):
 
     def add_dataset(self, magnification, dstep, target, thresh, cs, akv, tx, ty,
                     rrec, rmax1, rmax2, dfstd, rbfact, finpat1, finpat2, finpar, foutpar, foutsh,
-                    mgs = None):
+                    mgs = None, rclas=0):
         cards = []
         cards.append(self._create_card6(magnification, dstep, target, thresh, cs, akv, tx, ty))
         card = FrealignCard('card7')
         card.add_param(None, rrec, "reconstruct_resolution", "RREC", float, float_format="%.4f")
         card.add_param(None, rmax1, "refinement_resolution_max", "RMAX1", float)
         card.add_param(None, rmax2, "refinement_resolution_min", "RMAX2", float)
+        if self.version > 9.065: # from 9.07
+            card.add_param("RMAX2", rclas, "resolution_limit_classification", "RCLAS", float)
         card.add_param(None, dfstd, "defocus_uncertainty", "DFSTD", float)
         card.add_param(None, rbfact, "refinement_bfactor", "RBFACT", float)
         cards.append(card)
@@ -396,8 +398,8 @@ class Frealign8(FrealignBase):
         self.set_parameter("f3d", output_volume)
 
 class Frealign9(Frealign8):
-    def __init__(self):
-        Frealign8.__init__(self)
+    def __init__(self, version = 9.09):
+        Frealign8.__init__(self, version)
         self.executable = "frealign_v9_mp.exe"
         self.workdir = "."
         self.scratch_dir = None
@@ -418,6 +420,7 @@ class Frealign9(Frealign8):
         # card2
         card2 = self.get_card('card2')
         card2.add_param("PSIZE", 0, "molecule_weight", "MW", float)
+
 
     def turn_on(self, *args):
         super(Frealign9, self).turn_on(*args)
