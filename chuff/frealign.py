@@ -221,19 +221,23 @@ class FrealignBase(object):
         return "\n".join(ss)
 
     def run(self, project = None, server = None, stdout = None, background = False, workdir = ".", return_proc = True):
-        from datetime import datetime
         sr = FrealignScriptRunner(self)
         script_dir = workdir
-        script_file = os.path.join(script_dir, "frealign_script_%s.csh" % datetime.now().strftime("%d_%m_%y_%H%M%S"))
-        sr.script = script_file
+        import tempfile
+        script_file = os.path.join(script_dir, tempfile.NamedTemporaryFile(prefix="frealign_script", delete=False))
+        sr.script = script_file.name
         self.write_frealign_input_file(script_file, workdir = workdir)
+        script_file.close()
         if background:
             return sr.run(stdout = stdout, background = True, return_proc = return_proc)
         else:
             return sr.run(stdout = stdout)
 
     def write_frealign_input_file(self, script_file, workdir = "."):
-        sc = open(script_file,'w')
+        if type(script_file) == type(""):
+            sc = open(script_file,'w')
+        else:
+            sc = script_file
         sc.write("#!/bin/tcsh\n\n")
         sc.write("cd %s\n" % os.path.join(os.getcwd(), workdir))
         sc.write("%s << EOF\n" % self.executable)
