@@ -558,7 +558,7 @@ class FrealignActoMyosinVirginia(FrealignActin):
         finpat2 = os.path.join(self.output_dir,"finpat2")
         finpar = param_file
         foutpar = os.path.join(self.output_dir, output_param_file)
-        foutsh = "foutsh"
+        foutsh = os.path.join(self.output_dir, "foutsh")
         self.frealign.add_dataset(1, dstep, target, thresh, cs, akv, tx, ty, rrec, rmax1, rmax2,
                                    dfstd, rbfact, finpat1, finpat2, finpar, foutpar, foutsh)
         nptcls = len([line for line in open(param_file).read().strip().split("\n") if not line.strip().startswith("C")])
