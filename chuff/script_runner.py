@@ -17,8 +17,18 @@ class TcshScriptRunner(ScriptRunner):
         ScriptRunner.__init__(self, server)
         self.workdir = "."
         self.script = ""
+        self.p = None
     def get_exec(self):
         return "/bin/csh"
+
+    def run_script(self, script, workdir = ".", background = True, stdout = None, stderr = None, return_proc = True):
+        import tempfile
+        script_file = tempfile.NamedTemporaryFile(delete=False)
+        self.script = script_file.name
+        script_file.write("#!/bin/tcsh\n\n")
+        script_file.write("cd %s\n" % workdir)
+        script_file.write(script)
+        return self.run(background, stdout, stderr, return_proc)
 
     def get_script(self):
         return self.script
@@ -29,7 +39,7 @@ class TcshScriptRunner(ScriptRunner):
     def set_envs(self):
         pass
 
-    def run(self, background = False, stdout = None, stderr = None):
+    def run(self, background = False, stdout = None, stderr = None, return_proc = True):
         '''
             Run a script file with tcsh shell.
             Basically the program set the
@@ -47,11 +57,22 @@ class TcshScriptRunner(ScriptRunner):
         self.set_envs()
         os.chdir(self.get_workdir())
 
-        p = subprocess.Popen([self.get_exec(), self.get_script()], stdout = stdout, stderr = stderr)
-        if background:
-            return p
+        self.p = subprocess.Popen([self.get_exec(), self.get_script()], stdout = stdout, stderr = stderr)
+
+        if not background:
+            return self.p.wait()
         else:
-            return p.wait()
+            if return_proc: return self.p
+            else: return self.p.pid
+
+    def join(self):
+        '''
+            wait process finish
+        '''
+        if self.p:
+            logging.info("Wating process with id: %d finish" % self.p.pid())
+            return self.p.join()
+        return None
 
 class PBSScriptRunner(ScriptRunner):
     '''
