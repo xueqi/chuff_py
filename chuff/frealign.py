@@ -33,7 +33,7 @@ class FrealignParameter(object):
         self.sep = sep
         self.int_format = int_format
         self.float_foramt = float_format
-        self.value = value
+        self.set_value(value)
 
 
     def set_value(self, value):
