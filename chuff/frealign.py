@@ -403,7 +403,7 @@ class Frealign8(FrealignBase):
 class Frealign9(Frealign8):
     def __init__(self, version = 9.09):
         Frealign8.__init__(self, version)
-        self.executable = "frealign_v9_mp.exe"
+        self.executable = "frealign_v9.exe"
         self.workdir = "."
         self.scratch_dir = None
     def initCards(self):
@@ -433,9 +433,16 @@ class Frealign9(Frealign8):
     def run_parallel_local(self, ncpus = 4):
         if self.scratch_dir is None:
             import tempfile
-            self.scratch_dir = tempfile.mkdtemp(prefix = "frealign", dir = self.workdir)
+            scratch_dir = os.path.join(self.workdir, '.scratch')
+            if not os.path.exists(scratch_dir):
+                os.mkdir(scratch_dir)
+            self.scratch_dir = tempfile.mkdtemp(prefix = "frealign", dir = os.path.join(self.workdir, ".scratch"))
+
         if not os.path.exists(self.scratch_dir):
             os.mkdir(self.scratch_dir)
+        log_dir = os.path.join(self.workdir, "logs")
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
         # mode 0 for reconstruction only
         if self.get_param("mode") == 0:
             self.turn_on("FDUMP")
@@ -448,6 +455,7 @@ class Frealign9(Frealign8):
             merge_3d_in = "%s\n" % ncpus
             out_vol = self.get_param("F3D")
             for i in range(ncpus):
+                log_file = os.path.join(log_dir, "%s_%d.log" % (os.path.splitext(os.path.basename(out_vol))[0], i))
                 ifirst = nptcl_per_cpu * i + 1
                 ilast = nptcl_per_cpu * (i + 1)
                 if ilast > ptcl_num:
@@ -456,9 +464,8 @@ class Frealign9(Frealign8):
                 self.set_parameter("IFIRST", ifirst)
                 self.set_parameter("ILAST", ilast)
                 self.set_parameter("F3D", "%s_%d" % (out_vol, i))
-                merge_3d_in +="%s_%d\n" % (out_vol, i)
-                print self
-                proc = self.run(background = True, return_proc = True)
+                merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
+                proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
                 procs.append(proc)
             # wait all process done
             for proc in procs:
@@ -466,6 +473,11 @@ class Frealign9(Frealign8):
                 if rtn_code != 0:
                     print "proc exits with error: %d\n" % rtn_code
                     #return
+            # restore parameters
+
+            self.set_parameter("ILAST", ptcl_num)
+            self.set_parameter("IFIRST", 1)
+            self.set_parameter("F3D", out_vol)
 
             # merge the volume
 
@@ -480,7 +492,9 @@ class Frealign9(Frealign8):
             merge_3d_in += self.get_param("MAP2") + "\n"
             merge_3d_in += self.get_param("FPHA") + "\n"
             merge_3d_in += self.get_param("FPOI") + "\n"
-            script = "%s << EOF\n" % merge_3d_exe
+            script = ""
+            script += "setenv NCPUS %d\n" % ncpus
+            script += "%s << EOF\n" % merge_3d_exe
             script += merge_3d_in
             script += "EOF\n"
             sc = TcshScriptRunner()
