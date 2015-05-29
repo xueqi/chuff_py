@@ -324,7 +324,7 @@ class Frealign8(FrealignBase):
 
     def add_dataset(self, magnification, dstep, target, thresh, cs, akv, tx, ty,
                     rrec, rmax1, rmax2, dfstd, rbfact, finpat1, finpat2, finpar, foutpar, foutsh,
-                    mgs = None, rclas=0):
+                    mgs = None, rclas = 10):
         cards = []
         cards.append(self._create_card6(magnification, dstep, target, thresh, cs, akv, tx, ty))
         card = FrealignCard('card7')
@@ -444,16 +444,20 @@ class Frealign9(Frealign8):
         if not os.path.exists(log_dir):
             os.mkdir(log_dir)
         # mode 0 for reconstruction only
-        if self.get_param("mode") == 0:
-            self.turn_on("FDUMP")
-            self.turn_off("calc_fsc")
-            import subprocess
+        mode = self.get_param("mode")
+        if mode == 0 or mode == 1:
+            if mode == 0:
+                self.turn_on("FDUMP")
+                self.turn_off("calc_fsc")
+
             ptcl_num = self.get_param("ILAST")
 
             nptcl_per_cpu = ptcl_num / ncpus + 1
             procs = []
-            merge_3d_in = "%s\n" % ncpus
+            if mode == 0:
+                merge_3d_in = "%s\n" % ncpus
             out_vol = self.get_param("F3D")
+            out_par = self.get_param("FOUTPAR")
             for i in range(ncpus):
                 log_file = os.path.join(log_dir, "%s_%d.log" % (os.path.splitext(os.path.basename(out_vol))[0], i))
                 ifirst = nptcl_per_cpu * i + 1
@@ -463,8 +467,11 @@ class Frealign9(Frealign8):
 
                 self.set_parameter("IFIRST", ifirst)
                 self.set_parameter("ILAST", ilast)
-                self.set_parameter("F3D", "%s_%d" % (out_vol, i))
-                merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
+                if mode == 0:
+                    self.set_parameter("F3D", "%s_%d" % (out_vol, i))
+                    merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
+                elif mode == 1: # split the output par
+                    self.set_parameter("FOUTPAR", "%s_%d" % (out_par, i))
                 proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
                 procs.append(proc)
             # wait all process done
@@ -477,33 +484,70 @@ class Frealign9(Frealign8):
 
             self.set_parameter("ILAST", ptcl_num)
             self.set_parameter("IFIRST", 1)
-            self.set_parameter("F3D", out_vol)
 
             # merge the volume
+            if mode == 0:
+                merge_3d_exe = "merge_3d_mp.exe"
 
-            merge_3d_exe = "merge_3d_mp.exe"
+                # write the script
+                self.set_parameter("F3D", out_vol)
+                merge_3d_in += self.get_param("F3D") + ".res\n"
+                merge_3d_in += self.get_param("F3D") + "\n"
+                merge_3d_in += self.get_param("FWEIGHT") + "\n"
+                merge_3d_in += self.get_param("MAP1") + "\n"
+                merge_3d_in += self.get_param("MAP2") + "\n"
+                merge_3d_in += self.get_param("FPHA") + "\n"
+                merge_3d_in += self.get_param("FPOI") + "\n"
+                script = ""
+                script += "setenv NCPUS %d\n" % ncpus
+                script += "%s << EOF\n" % merge_3d_exe
+                script += merge_3d_in
+                script += "EOF\n"
+                sc = TcshScriptRunner()
+                print script
+                proc = sc.run_script(script, workdir = os.getcwd())
+                rtn_code = proc.wait()
 
-            # write the script
-            self.set_parameter("F3D", out_vol)
-            merge_3d_in += self.get_param("F3D") + ".res\n"
-            merge_3d_in += self.get_param("F3D") + "\n"
-            merge_3d_in += self.get_param("FWEIGHT") + "\n"
-            merge_3d_in += self.get_param("MAP1") + "\n"
-            merge_3d_in += self.get_param("MAP2") + "\n"
-            merge_3d_in += self.get_param("FPHA") + "\n"
-            merge_3d_in += self.get_param("FPOI") + "\n"
-            script = ""
-            script += "setenv NCPUS %d\n" % ncpus
-            script += "%s << EOF\n" % merge_3d_exe
-            script += merge_3d_in
-            script += "EOF\n"
-            sc = TcshScriptRunner()
-            print script
-            proc = sc.run_script(script, workdir = os.getcwd())
-            rtn_code = proc.wait()
+                if rtn_code != 0:
+                    print "ERror with merge_3d: rtn=%d\n" % rtn_code
 
-            if rtn_code != 0:
-                print "ERror with merge_3d: rtn=%d\n" % rtn_code
+                else:
+                    # clean up
+                    for i in range(ncpus):
+                        os.remove("%s_%d.hed\n" % (out_vol, i))
+                        os.remove("%s_%d.img\n" % (out_vol, i))
+            elif mode == 1:
+                # merge parameters to out_par
+                opar = open(out_par,'w')
+                for i in range(ncpus):
+                    ipar = "%s_%d" % (out_par, i)
+                    f = open(ipar)
+                    line = f.readline()
+                    if i == 0:
+                        # write header
+                        while True:
+                            if len(line) == 0: break
+                            if not line.strip().startswith("C"): break
+                            opar.write(line)
+                            line = f.readline()
+                        # write data
+                        while True:
+                            if len(line) == 0: break
+                            if line.strip().startswith("C"): continue
+                            opar.write(line)
+                            line = f.readline()
+                    else:
+                        # write data only
+                        while True:
+                            if len(line) == 0: break
+                            if line.strip().startswith("C"): continue
+                            opar.write(line)
+                            line = f.readline()
+                    f.close()
+                    # remove the intermidate files
+                    os.remove(ipar)
+                opar.close()
+
 class FrealignHelical(object):
     def __init__(self, twist = 0, rise = 0, version = 9):
         self.version = version
@@ -586,6 +630,7 @@ class FrealignActoMyosinVirginia(FrealignActin):
 
     def run(self):
         self.frealign.run()
+
 ###############################################################################
 class FrealignV8(object):
 
