@@ -3,10 +3,7 @@
     This is the frealign wrapper in python.
 '''
 
-from collections import OrderedDict
 from chuff.script_runner import TcshScriptRunner
-
-from chuff.includes.server_configs.program_settings import FREALIGN_EXEC, FREALIGN_MP_EXEC
 
 import os
 
@@ -59,11 +56,26 @@ class FrealignParameter(object):
         return str(self.value)
 
 class FrealignCard(object):
+    '''
+        Frealign Card class, represent one line in frealign input file
+    '''
     def __init__(self, cardname, newline = False):
+        '''
+            :param str cardname: the card name, used to retrieve the card
+            :param bool newline: the str repr for the line, w/ or w/o "\n"
+
+        '''
         self.name = cardname
         self.params = []
         self.newline = newline
+
     def add_param(self, after = None, *args, **kwargs):
+        '''
+            add parameter to the card.
+
+            :param str after: insert after which card. None for append to the last.
+
+        '''
         param = FrealignParameter(*args, **kwargs)
         if after is not None:
             idx = -1
@@ -425,6 +437,26 @@ class Frealign9(Frealign8):
         card2.add_param("PSIZE", 0, "molecule_weight", "MW", float)
 
 
+    def get_filename(self, vol):
+        '''
+            get file name
+        '''
+        cform = self.get_param("CFORM")
+        bname = os.path.splitext(vol)[0]
+        if cform == "I":
+            # imagic
+            ext = "img"
+        elif cform == "S":
+            ext = "spi"
+        elif cform == "M":
+            ext = 'mrc'
+        else:
+            ext = None
+        if ext is not None:
+            return ",".join([bname, ext])
+        else:
+            return vol
+
     def turn_on(self, *args):
         super(Frealign9, self).turn_on(*args)
         if "cryo" in args:
@@ -467,11 +499,16 @@ class Frealign9(Frealign8):
 
                 self.set_parameter("IFIRST", ifirst)
                 self.set_parameter("ILAST", ilast)
+                self.set_parameter("F3D", "%s_%d" % (out_vol, i))
                 if mode == 0:
-                    self.set_parameter("F3D", "%s_%d" % (out_vol, i))
                     merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
                 elif mode == 1: # split the output par
                     self.set_parameter("FOUTPAR", "%s_%d" % (out_par, i))
+                    vol_name = self.get_filename(out_vol)
+                    vol = EMData()
+                    vol.read_image(vol_name, 0)
+                    vol.write_image(self.get_filename("%s_%d" % (out_vol, i)))
+                    del vol
                 proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
                 procs.append(proc)
             # wait all process done
@@ -491,6 +528,7 @@ class Frealign9(Frealign8):
 
                 # write the script
                 self.set_parameter("F3D", out_vol)
+                self.turn_off("FDUMP")
                 merge_3d_in += self.get_param("F3D") + ".res\n"
                 merge_3d_in += self.get_param("F3D") + "\n"
                 merge_3d_in += self.get_param("FWEIGHT") + "\n"
@@ -520,6 +558,10 @@ class Frealign9(Frealign8):
                 # merge parameters to out_par
                 opar = open(out_par,'w')
                 for i in range(ncpus):
+                    # clean up the volume
+                    os.remove("%s_%d.hed\n" % (out_vol, i))
+                    os.remove("%s_%d.img\n" % (out_vol, i))
+                    # combine the parameter
                     ipar = "%s_%d" % (out_par, i)
                     f = open(ipar)
                     line = f.readline()
@@ -595,7 +637,7 @@ class FrealignActoMyosinVirginia(FrealignActin):
     def __init__(self, output_dir = "frealign_bin1_gold3", tag="test"):
         FrealignActin.__init__(self, output_dir, tag)
         self.set_parameter("voltage", 300)
-        self.set_parameter("outer_radius", 250)
+        self.set_parameter("outer_radius", 200)
         self.set_parameter('detector_step', 14)
         self.set_parameter("spherial_aberration", 2.7)
         self.set_parameter("pixel_size", 1.08714)
@@ -632,521 +674,6 @@ class FrealignActoMyosinVirginia(FrealignActin):
         self.frealign.run()
 
 ###############################################################################
-class FrealignV8(object):
-
-    '''
-        Each FREALIGN_EXEC instance must set the following:
-        RO, PSIZE, CFORM, ILAST,
-        ALPHA, RISE,
-        RELMAG, DSTEP,
-        RREC,
-        FINPART1,
-    '''
-
-    def __init__(self, params = {}, version = 9):
-        self.params = OrderedDict()
-        self.exec_version = version
-        self.mp = True
-
-        #if self.exec_version == 8:
-        self.card1 = "CFORM,IFLAG,FMAG,FDEF,FASTIG,FPART,IEWALD,FBEAUT,FCREF,FMATCH,IFSC,FSTAT,IBLOW".split(",")
-        self.card2 = "RO,RI,PSIZE,WGH,XSTD,PBC,BOFF,DANG,ITMAX,IPMAX".split(",")
-        self.card3 = ["PMASK"]
-        #elif self.exec_version == 9:
-        #    self.card1 = "CFORM,IFLAG,FMAG,FDEF,FASTIG,FPART,IEWALD,FBEAUT,FFILT,FBFACT,FMATCH,IFSC,FDUMP,IMEM,INTERP".split(",")
-        #    self.card3 = ["PMASK", "DMASK"]
-        #    self.card2 = "RO,RI,PSIZE,MW,WGH,XSTD,PBC,BOFF,DANG,ITMAX,IPMAX".split(",")
-        self.card4 = "IFIRST,ILAST".split(",")
-        self.card5 = ["ASYM"]
-        self.card5a = [] #TODO
-        self.card5b = "ALPHA,RISE,NSUBUNITS,NSTARTS,STIFFNESS".split(",") # for H ASYM only
-        # 6 - 12 for each dataset, terminate with RELMAG <=0
-        self.card6 = "RELMAG,DSTEP,TARGET,THRESH,CS,AKV,TX,TY".split(",")
-        self.card7 = "RREC,RMAX1,RMAX2,DFSTD,RBFACT".split(",")
-        self.card8 = ["FINPAT1"]
-        self.card9 = ["FINPAT2"]
-        self.card10a = ["FINPAR"]
-        self.card10b = "NIN,ABSMAGPIN,IFILMIN,DFMID1IN,DFMID2IN,ANGASTIN,MORE".split(",")
-        self.card11 = ["FOUTPAR"]
-        self.card12 = ["FOUTSH"]
-        self.card13 = ["F3D"]
-        self.card14 = ["FWEIGH"]
-        self.card15 = ["MAP1"]
-        self.card16 = ["MAP2"]
-        self.card17 = ["FPHA"]
-        self.card18 = ["FPOI"]
-        self.set_default_params()
-
-        self.set(params)
-        self.workdir = "."
-
-        self.exec_file = "frealign"
-        self.cores = 16
-        self.saves = []
-
-    def run(self, project = None, server = None, stdout = None, background = False):
-        from datetime import datetime
-        import os
-        if server is None:
-            # run on local machine
-            sr = FrealignScriptRunner(self)
-            sr.workdir = self.workdir
-            script_dir = self.workdir
-            script_file = os.path.join(script_dir, "frealign_script_%s.csh" % datetime.now().strftime("%d_%m_%y_%H%M%S"))
-            sr.script = script_file
-            self.write_frealign_input_file(script_file)
-            sr.run(stdout = stdout, background = True)
-            if background:
-                return sr
-        self.cleanup()
-
-    def cleanup(self):
-        '''
-            clean up the files
-        '''
-
-        # remove temp directory
-        if self.temp_dir is not None and os.path.exists(self.temp_dir) and self.temp_dir.startswith("/tmp/"):
-            os.system('rm -rf %s' % self.temp_dir)
-
-    def set_cores(self, ncores):
-        self.cores = ncores
-
-    def set_pixel_size(self, pixel_size):
-        self.params["PSIZE"] = pixel_size
-        for dataset in self.params["datasets"]:
-            if dataset["RREC"] < 0:
-                dataset["RREC"] = 2 * pixel_size
-
-    def set_number_particles(self, num_ptcl):
-        self.params["ILAST"] = num_ptcl
-
-    def set(self, d):
-        '''
-            set parameters according to the input directory
-        '''
-        for key, value in d.items():
-            if key in self.params:
-                self.params[key] = value
-            elif len(self.params["datasets"]) > 0 and key in self.params["datasets"][0]:
-                self.params["datasets"][0][key] = value
-            else:
-                raise Exception, "No this key exists: %s" % key
-
-    def get_str(self, value):
-        '''
-            get string representation of a FREALIGN_EXEC parameter value
-        '''
-        if value is False: return "F"
-        if value is True: return "T"
-        if type(value) == type(1): return "%d" % value
-        if type(value) == type(1.1): return "%.5f" % value
-        if type(value) == type([]) or type(value) == type(()):
-            return ",".join([self.get_str(v) for v in value])
-        return value
-
-    def get_card_str(self, card, params = None):
-        if params is None: params = self.params
-        if type(card) == type(""): # this is the str of card prop. get card first
-            card = getattr(self, card)
-        return ",".join([self.get_str(params[key]) for key in card])
-
-
-    def get_card_str_list(self):
-        card_strs = []
-        card_num = 1
-        while card_num < 19:
-
-            # loop the cards 6 to 12 for all datasets
-            if card_num == 6:
-                for dataset in self.params["datasets"]:
-                    # write 6-12 cards
-                    for inner_card_num in range(6, 13):
-                        if inner_card_num == 10:
-                            if "FINPAR" in dataset:
-                                card_strs.append(self.get_card_str(self.card10a, dataset))
-                            else:
-                                for micrograph in self.params["micrographs"]:
-                                    card_strs.append(self.get_card_str(self.card10b, micrograph))
-                        else:
-                            card_strs.append(self.get_card_str("card%d" % inner_card_num, dataset))
-
-                # write card 6 for termination
-                dataset = {}
-                for key in self.card6:
-                    dataset[key] = 0
-                card_strs.append(self.get_card_str(self.card6, dataset))
-                card_num = 13
-                continue
-
-            card_name = "card%d" % card_num
-            card = getattr(self, card_name)
-            card_strs.append(self.get_card_str(card))
-            if card_num == 5:
-                if self.params["ASYM"] == "H":
-                    card_strs.append(self.get_card_str("card5b"))
-                elif self.params["ASYM"] == "N": #TODO: 'N' should be check for integer
-                    card_strs.append(self.get_card_str("card5a"))
-
-            card_num += 1
-        return card_strs
-
-    def set_box_size(self, box_size = -1):
-        if box_size == -1 or box_size is None: return
-        if self.params["RO"] <= 0 and self.params["PSIZE"] > 0:
-            self.params["RO"] = int(box_size * self.params["PSIZE"]  / 2 - 2)
-
-    def set_particle_size(self, particle_size = -1):
-        '''
-            set particle size related parameters
-        '''
-        if particle_size <= 0 or particle_size is None: return
-
-        self.params["RO"] =  int(particle_size * 1.5 / 2)
-
-    def setup_result_file_names(self, output_root = None, temp_dir = None):
-        '''
-            set up file names. if the file not in the saves list,
-            we just put it into the temp dir and remove later
-        '''
-        if self.temp_dir is None:
-            import tempfile
-            self.temp_dir = tempfile.mkdtemp()
-        if output_root is None:
-            output_root = self.output_root
-        output_root_bname = os.path.basename(output_root)
-        d = {}
-        fids = ["f3d", "fweigh", "fpha", "fpoi", "map1", "map2"]
-        fids_d = ["foutpar", "finpat2", "foutsh"]
-        for fid in fids:
-            if fid not in self.saves:
-                d[fid.upper()] = os.path.join(self.temp_dir, "%s_%s" % (output_root_bname, fid))
-            else:
-                d[fid.upper()] = "%s_%s" % (output_root, fid)
-        return d
-
-    def setup_dataset_filenames(self, output_root = None, temp_dir = None):
-        '''
-            set up dataset file names. if the file not in the saves list,
-            we just put it into the temp dir and remove later
-        '''
-        if self.temp_dir is None:
-            import tempfile
-            self.temp_dir = tempfile.mkdtemp()
-        if output_root is None:
-            output_root = self.output_root
-        output_root_bname = os.path.basename(output_root)
-        d = {}
-        fids_d = ["foutpar", "finpat2", "foutsh"]
-        for dataset in self.params["datasets"]:
-            inpar = dataset["FINPAR"]
-            ibname = os.path.basename(os.path.splitext(inpar)[0])
-            for fid in fids_d:
-                fname = dataset[fid.upper()]
-                if not fname:
-                    fname = "%s_%s" % (ibname, )
-                if fid not in self.saves:
-                    d[fid.upper()] = os.path.join(self.temp_dir, "%s_%s" % (output_root_bname, fid))
-                else:
-                    d[fid.upper()] = "%s_%s" % (output_root, fid)
-
-
-    def set_save(self,*args):
-        for fid in args:
-            if fid.lower() not in self.saves:
-                self.saves.append(fid.lower())
-
-    def set_nosave(self, *args):
-        for fid in args:
-            if fid.lower() in self.saves:
-                self.saves.remove(fid.lower())
-
-    def set_exec(self, exec_file):
-        self.exec_file = exec_file
-
-
-    def check_params(self):
-        '''
-            check parameters
-
-        '''
-        for dataset in self.params["datasets"]:
-            dataset["FINPAT1"]
-
-    def guess_stack_type(self, stack_fname):
-        if stack_fname.endswith(".hed") or stack_fname.endswith(".img"):
-            return "I"
-        if stack_fname.endswith(".spi"):
-            return "S"
-        return "M" # "MRC" default
-
-    def write_frealign_input_file(self, input_file_name):
-        '''
-            Write frealign run script
-            :param str input_file_name: The script name to write
-        '''
-        self.check_params()
-        f = open(input_file_name, 'w')
-        f.write("#!/bin/csh\n\n")
-
-        f.write("cd %s\n" % os.path.join(os.getcwd(), self.workdir))
-        f.write("setenv OMP_NUM_THREADS %d\n" % self.cores)
-        f.write("%s << EOF\n" % self.exec_file)
-        f.write("\n".join(self.get_card_str_list()))
-        f.write("\nEOF\n")
-        f.close()
-        print open(input_file_name).read()
-
-    def create_tempdir(self, parentdir = None):
-        import tempfile
-        return tempfile.mkdtemp(dir=parentdir)
-
-    def create_resultdir(self, resultdir):
-        import os
-        if os.path.exists(resultdir): return
-        os.makedirs(resultdir)
-
-    def set_default_params(self):
-        if self.mp:
-            self.exec_file = FREALIGN_MP_EXEC
-        else:
-            self.exec_file = FREALIGN_EXEC
-
-        self.params = {
-                    "CFORM" : "I", # I: Imagic, S: spider, M: mrc
-                    "IFLAG" : 0,  # 0:reconstruct, 1: local refine, 3: global refine, 4: refine and reconst
-                    "FMAG"  : False, # magnification refine
-                    "FDEF"  : False, # defocus Refinement
-                    "FASTIG" : False, # Astigmatism refinement
-                    "FPART" :  False, #Defocus refinement for individual particles if FPART=T, otherwise
-                                #defocus change is constrained to be the same for all
-                                #particles in one image
-                    "IEWALD" : 0, # 0 = No correction
-                    "FBEAUT" : False, # Apply extra real space symmetry averaging and masking to
-                                        #beautify final map just prior to output.
-                    "FFILT"  : False, #Apply single particle Wiener filter to final reconstruction
-                    "FCREF"  : False, #  Apply FOM filter to final reconstruction using function SQRT(2.0*FSC/(1.0+FSC)) (see publication #4 above).
-                    "FBFACT" : False, # Determine and apply B-factor to final reconstruction
-                    "FMATCH" : False, # Write out matching projections after the refinement
-
-                    "IFSC" : 0, # Calculation of FSC tabel. 0 = Internally calculate two reconstructions with odd and even
-                                    # numbered particles and generate FSC table at the end of the run.
-                    "FDUMP" : False, #If set to T, dumps intermediate files from a 3D reconstruction and then terminates run
-                    "IMEM"  : False, #  Memory usage: 0 = least memory, 3 = most memory. v9 only
-                    "FSTAT" : False, # Calculate additional statistics in resolution table at the end, v8 only
-                    "IBLOW" : 1, # Padding factor for reference structure, v8 only
-                    "INTERP" : 1, # Interpolation scheme used for 3D reconstruction:
-                    # card 2
-                    "RO" : -1, # Outer radius of reconstruction in Angstroms from centre of particle,
-                    "RI" : 0, # Inner radius of reconstruction in Angstroms from centre of particle
-                    "PSIZE" : -1, # Required pixel size [Angstrom],
-                    "MW" : -1, # Approximate molecular mass of the partcle, in kDa.
-                    "WGH" : 0.07, # % Amplitude contrast (-1...1): 0.07
-                    "XSTD" : 0.0, #  number of standard deviations above mean for masking of input low-pass filtered 3D model
-                    "PBC" : 1000, # Phase residual / pseudo-B-factor conversion Constant: 5.0. W = exp (-DELTAP/PBC * R^2)
-                    "BOFF" : 0.0, # average phase residual: 60.0, approximate average phase residual of all particles, used in calculating weights for contributions of different  particles to 3D map (see Grigorieff, 1998).
-                    "DANG" : 30, # angular step size for the angular search used in modes IFLAG=3,4,
-                    "ITMAX" : 50, # number of cycles of randomised search/refinement used in modes IFLAG=2,4
-                    "IPMAX" : 10, # number of potential matches in a search that should be tested further in a subsequent local refinement.
-
-                    # card 3
-                    "PMASK" : [1, 1, 1, 1, 1],  #  - 0/1 mask to exclude parameters from refinement.
-                    "DMASK" : "",
-
-                    # card 4
-                    "IFIRST" : 1, # First and last particle to be included: 1,5000
-                    "ILAST" : -1,
-
-                    # card 5
-                    "ASYM" : "H",  #  symmetry required Cn,Dn,T,O,I,I1,I2 or N (can be zero), H
-
-                    # card 6 - 12
-                    "datasets" : [
-
-                                  ],
-                    # H ASYM
-                    "ALPHA" : -1, # DPHI,
-                    "RISE" : -1, # DP,
-                    "NSUBUNITS" : 1, #
-                    "NSTARTS" : 1, #
-                    "STIFFNESS" : 0.0001, #
-
-                    "F3D" : "F3D",
-                    "FWEIGH" : "FWEIGH",
-                    "MAP1" : "MAP1",
-                    "MAP2" : "MAP2",
-                    "FPHA" : "FPHA",
-                    "FPOI" : "FPOI"
-                    }
-
-    def add_dataset(self, magnification = 1, dstep = 14, target = 90, thresh = 90, cs = 2., akv = 200., tx = 0., ty = 0.,
-                    input_params = "",
-                    rrec = -1, rmax1 = 200, rmin = 15,
-                    dfstd = 1000, rbfact = 0, micrographs = [], input_particles = "", output_projection = "", output_param = "", output_shift = ""):
-        dataset = {}
-        dataset.update({
-                        "RELMAG" : magnification, # Relative magnification of data set.
-                        "DSTEP" : dstep, # Densitometer step size. 14 for K2?
-                        "TARGET" : target, # Target phase residual (for resolution between RMAX1 and RMAX2)
-                        "THRESH" : target, # Phase residual cut-off. Any particles with a higher overall phaseresidual will not be included in the reconstruction when IFLAG=0,1,2,3
-                        "CS" : cs, #
-                        "AKV" : akv, # High Tension
-                        "TX" : tx, #  Beam tilt [mrad] in X, Y direction: 0.0, 0.0
-                        "TY" : ty,
-                        "FINPAR" : input_params,
-                        "RREC" : rrec, # Resol. of reconstruction in Angstroms, e.g. 10.0
-                        "RMAX1" : rmax1, # Resol. in refinement in Angstroms, low & high: 200.0,25.0
-                        "RMAX2" : rmin,
-                        "DFSTD" : dfstd, # Defocus uncertainty in Angstroms
-                        "RBFACT" : rbfact, # B-factor to apply to particle image projections before orientation  determination or refinement.
-                        "micrographs" : micrographs,
-                        "FINPAT1" : input_particles,
-                        "FINPAT2" : output_projection,
-                        "FOUTPAR" : output_param,
-                        "FOUTSH" : output_shift,
-
-                    })
-
-        self.params["datasets"].append(dataset)
-class FrealignReconstruct(FrealignV8):
-    '''
-        Run A Reconstruction using FREALIGN_EXEC.
-        Reconstruct only: set IFLAG = 0, FINPAR to the parameter file,
-        Reconstruct needs:
-        1. input particles
-        2. input alignment file
-        3. output root
-        4. parameter dictionary
-    '''
-    def __init__(self, output_root, params):
-        params["IFLAG"] = 0
-        FrealignV8.__init__(self, params)
-
-        import tempfile
-        self.temp_dir = tempfile.mkdtemp()
-        self.set_save("f3d", "map1", "map2")
-        self.output_root = output_root
-
-
-
-        d = {
-            }
-        d.update(self.setup_result_file_names(output_root = output_root, temp_dir = self.temp_dir))
-        self.set(d)
-    def run(self, project = None, server = None, stdout = None, background = False):
-        output_volume = self.params["F3D"]
-        input_stack = self.params["datasets"][0]["FINPAT1"]
-        # will create a new output volume with the same size of the input particle stack
-        from EMAN2 import EMData, test_image
-        data = EMData()
-        data.read_image(input_stack, 0, True)
-        nx = data.get_xsize()
-        vol = test_image(1, size=(nx,nx,nx))
-        if self.params["CFORM"].upper() == "I":
-            ext = "hed"
-        elif self.params["CFORM"].upper() == "S":
-            ext = "spi"
-        elif self.params["CFORM"].upper() == "M":
-            ext = "mrc"
-        print "%s.%s" % (output_volume, ext)
-        vol.write_image("%s.%s" % (output_volume, ext), 0)
-        FrealignV8.run(self, project, server, stdout, background)
-
-class FrealignRefineLocal(FrealignV8):
-
-    '''
-        Run an alignment using FREALIGN_EXEC.
-        alignment only: set IFLAG = 1, FINPAR to the input parameter file,
-        alignment needs:
-        1. input particles
-        2. input alignment file
-        3. output root
-        4. parameter dictionary
-    '''
-    def __init__(self, input_particles, input_alignment, output_root, params):
-        params["IFLAG"] = 1
-        FrealignV8.__init__(self, params)
-
-        import tempfile
-        self.temp_dir = tempfile.mkdtemp()
-        self.set_save("foutpar")
-        self.output_root = output_root
-        self.setup_file_names()
-
-        d = {"FINPAR" : input_alignment,
-            }
-        d.update(self.setup_file_names())
-        self.set(d)
-
-
-class FrealignReconstructMP(FrealignV8):
-    '''
-        Use multiple process do the reconstruction and merge together
-    '''
-
-    def __init__(self, input_particles,input_alignment, output_root, params, nprocs = 1, ppn = 1, version = 9):
-        '''
-            :param str input_particles: the input particle stack
-            :param str input_alignment: the input parameters file. The .par file
-            :param str output_root: The output root name. %s_foutpar, %s_f3d.???,...
-            :param dict params: The parameters inputs for the refinement.
-            :param int nprocs: number of reconstruction instances
-            :param int ppn: number of cpu use per reconstruct instance
-        '''
-
-        self.nprocs = nprocs
-        self.ppn = ppn
-        if version < 9: raise Exception, "Multi reconstruction only support from frealign version 9"
-        FrealignV8.__init__(self, params, version = version)
-
-    def run(self):
-        '''
-            create an instance of FrealignV8 Reconstruct instance and run parallel. Save partial results and merge after all recosntruct instance finished
-
-        '''
-
-        from copy import copy
-        params = copy(self.params)
-        params['FDUMP'] = True
-        # we split the particles to equal numbers for each procs
-        nptcls = EMUtil.get_image_count(self.input_particles)
-        if nptcls == 1:
-            data = EMData()
-            data.read_image(self.input_particles, 0, True)
-            nptcls = data.get_zsize()
-        nptcls_per_proc = int(nptcls / self.nprocs) + 1
-        srs = []
-        for i in range(self.nprocs):
-            params_current = copy(params)
-
-            ifirst = i * nptcls_per_proc + 1
-            ilast = i * nptcls_per_proc
-            if ilast < nptcls: ilast = nptcls
-            params_current['IFIRST'] = ifirst
-            params_current['ILAST'] = ilast
-
-            # set the output_volume
-            params_current['F3D'] = 'intermidate_volume_f3d_%d' % ()
-
-            fr = FrealignReconstruct(self.input_particles, self.input_alignment,
-                                     self.output_root, params_current)
-            sr = fr.run()
-            srs.append(sr)
-
-        # waiting for all instance finish
-        for sr in srs:
-            sr.join()
-
-        # merge the volumes using "merge_3d"
-
-        #merge_volume()
-
-
-def get_params(params):
-    '''
-        get parameters from params and return the params for frealign
-    '''
-    pass
 
 def resize_stack(input_stack, output_stack, new_size):
     '''
@@ -1173,13 +700,12 @@ def resize_stack(input_stack, output_stack, new_size):
     for i in range(len(ptcls)):
         ptcl.write_image(output_stack, i)
 
-
 if __name__ == "__main__":
     # frealign reconstruct need :
     #    an input parameter file
     #    an input particle stacks
     #    an output directory
-    import argparse, os
+    import argparse
 
     parser = argparse.ArgumentParser(description="FrealignV8 commandline wrapper.\nUse: frealign.py --params=frealign_bin1_gold1/chuck_apomyoIb_201501_5.par --output_dir=frealign_bin1_gold1 --apix=4.35 --ptcls=frealign_bin1_gold1/frealign_image_stack.hed --dp=28.14 --dphi=167.1")
 
@@ -1254,20 +780,7 @@ if __name__ == "__main__":
 
             }
         print d
-        fr = FrealignReconstruct(os.path.splitext(options.params)[0], d)
-        fr.add_dataset(input_params = os.path.join(os.getcwd(), input_params),
-                       input_particles = options.ptcls,
-                       cs = 2.7, akv = 300.0,
-                       )
-        fr.set_save("reconstruct", "fsc1", "fsc2")
-        fr.workdir = "."
-        fr.set_pixel_size(options.apix)
-        fr.set_cores(options.cores)
-        if options.frealign_exec is not None:
-            fr.set_exec(options.frealign_exec)
 
         #fr.set(d)
-        from datetime import datetime
-        fr.run(stdout = open('frealign_log_%s.log' % datetime.now(), 'w'))
     elif options.task == "refine":
         pass

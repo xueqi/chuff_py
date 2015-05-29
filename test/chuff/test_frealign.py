@@ -103,8 +103,8 @@ class TestFrealignActoMyosinVirginia(unittest.TestCase):
     def testInit(self):
         self.fr.tag = "test"
         self.fr.setup_files()
-        self.fr.add_dataset("test_file_stack", "test_input_param", "test_output_param")
-        self.fr.run()
+        #self.fr.add_dataset("test_file_stack", "test_input_param", "test_output_param")
+        #self.fr.run()
 
     def test_parallel_run_local(self):
         fr = self.fr
