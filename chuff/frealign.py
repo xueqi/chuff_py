@@ -4,7 +4,7 @@
 '''
 
 from chuff.script_runner import TcshScriptRunner
-
+from EMAN2 import EMData
 import os
 
 ACTIN_TWIST  = 167.1
@@ -206,7 +206,20 @@ class FrealignBase(object):
             exc_str += ", ".join([param.name for param in card.params])
             exc_str += "\n"
         raise Exception, exc_str
-
+    
+    def get_image_basename(self, fname):
+        '''
+            get image name without extension
+        '''
+        bname, ext = os.path.splitext(fname)
+        cform = self.get_param("CFORM")
+        if cform == "I" and (ext ==".img" or ext == ".hed"):
+            return bname
+        if cform == "S":
+            return bname
+        if cform == "M":
+            return bname
+        return fname
     def turn_on(self, *args):
         '''
             options are:
@@ -442,10 +455,15 @@ class Frealign9(Frealign8):
             get file name
         '''
         cform = self.get_param("CFORM")
-        bname = os.path.splitext(vol)[0]
+        bname, ext1 = os.path.splitext(vol)
+        ext1 = ext1[1:]
         if cform == "I":
             # imagic
             ext = "img"
+            if ext1 == "img" or ext1 == "hed":
+                pass
+            else:
+                bname = vol
         elif cform == "S":
             ext = "spi"
         elif cform == "M":
@@ -453,7 +471,7 @@ class Frealign9(Frealign8):
         else:
             ext = None
         if ext is not None:
-            return ",".join([bname, ext])
+            return ".".join([bname, ext])
         else:
             return vol
 
@@ -490,6 +508,10 @@ class Frealign9(Frealign8):
                 merge_3d_in = "%s\n" % ncpus
             out_vol = self.get_param("F3D")
             out_par = self.get_param("FOUTPAR")
+            if mode == 1:
+                vol_name = self.get_filename(out_vol)
+                vol = EMData()
+                vol.read_image(vol_name, 0, False, None, True)
             for i in range(ncpus):
                 log_file = os.path.join(log_dir, "%s_%d.log" % (os.path.splitext(os.path.basename(out_vol))[0], i))
                 ifirst = nptcl_per_cpu * i + 1
@@ -504,13 +526,10 @@ class Frealign9(Frealign8):
                     merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
                 elif mode == 1: # split the output par
                     self.set_parameter("FOUTPAR", "%s_%d" % (out_par, i))
-                    vol_name = self.get_filename(out_vol)
-                    vol = EMData()
-                    vol.read_image(vol_name, 0)
                     vol.write_image(self.get_filename("%s_%d" % (out_vol, i)))
-                    del vol
                 proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
                 procs.append(proc)
+            del vol
             # wait all process done
             for proc in procs:
                 rtn_code = proc.wait()
@@ -552,15 +571,15 @@ class Frealign9(Frealign8):
                 else:
                     # clean up
                     for i in range(ncpus):
-                        os.remove("%s_%d.hed\n" % (out_vol, i))
-                        os.remove("%s_%d.img\n" % (out_vol, i))
+                        os.remove("%s_%d.hed" % (out_vol, i))
+                        os.remove("%s_%d.img" % (out_vol, i))
             elif mode == 1:
                 # merge parameters to out_par
                 opar = open(out_par,'w')
                 for i in range(ncpus):
                     # clean up the volume
-                    os.remove("%s_%d.hed\n" % (out_vol, i))
-                    os.remove("%s_%d.img\n" % (out_vol, i))
+                    os.remove("%s_%d.hed" % (out_vol, i))
+                    os.remove("%s_%d.img" % (out_vol, i))
                     # combine the parameter
                     ipar = "%s_%d" % (out_par, i)
                     f = open(ipar)
@@ -602,6 +621,8 @@ class FrealignHelical(object):
         self.rise = rise
         self.frealign.set_symmetry("H", twist, rise)
     def set_parameter(self, paramname, paramvalue):
+        if paramname in ["F3D"]:
+            paramvalue = self.frealign.get_image_basename(paramvalue)
         self.frealign.set_parameter(paramname, paramvalue)
 
     def __str__(self):
