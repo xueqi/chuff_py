@@ -278,6 +278,9 @@ class Frealign8(FrealignBase):
     def __init__(self, version = 8.):
         FrealignBase.__init__(self, version)
         self.executable = "frealign_v8_mp_cclin"
+        self.scratch_dir = None
+    def set_scratch_dir(self, d):
+        self.scratch_dir = d
     def initCards(self):
         card = FrealignCard("card1")
         card.add_param(value = "I", name = "file_format", frealign_name = "CFORM", param_type = str)
@@ -430,7 +433,6 @@ class Frealign9(Frealign8):
         Frealign8.__init__(self, version)
         self.executable = "frealign_v9.exe"
         self.workdir = "."
-        self.scratch_dir = None
     def initCards(self):
 
         Frealign8.initCards(self)
@@ -449,8 +451,9 @@ class Frealign9(Frealign8):
         card2 = self.get_card('card2')
         card2.add_param("PSIZE", 0, "molecule_weight", "MW", float)
 
-
-    def get_filename(self, vol):
+    def get_param_full_path(self, par, dir = None):
+        return os.path.join(dir, par.split("/")[-1])
+    def get_imagename(self, vol, dir = None, ext = None):
         '''
             get file name
         '''
@@ -489,7 +492,7 @@ class Frealign9(Frealign8):
             self.scratch_dir = tempfile.mkdtemp(prefix = "frealign", dir = os.path.join(self.workdir, ".scratch"))
 
         if not os.path.exists(self.scratch_dir):
-            os.mkdir(self.scratch_dir)
+            os.makedirs(self.scratch_dir)
         log_dir = os.path.join(self.workdir, "logs")
         if not os.path.exists(log_dir):
             os.mkdir(log_dir)
@@ -509,7 +512,7 @@ class Frealign9(Frealign8):
             out_vol = self.get_param("F3D")
             out_par = self.get_param("FOUTPAR")
             if mode == 1:
-                vol_name = self.get_filename(out_vol)
+                vol_name = self.get_imagename(out_vol)
                 vol = EMData()
                 vol.read_image(vol_name, 0, False, None, True)
             for i in range(ncpus):
@@ -526,7 +529,7 @@ class Frealign9(Frealign8):
                     merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
                 elif mode == 1: # split the output par
                     self.set_parameter("FOUTPAR", "%s_%d" % (out_par, i))
-                    vol.write_image(self.get_filename("%s_%d" % (out_vol, i)))
+                    vol.write_image(self.get_imagename("%s_%d" % (out_vol, i)))
                 proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
                 procs.append(proc)
             del vol
@@ -534,8 +537,8 @@ class Frealign9(Frealign8):
             for proc in procs:
                 rtn_code = proc.wait()
                 if rtn_code != 0:
-                    print "proc exits with error: %d\n" % rtn_code
-                    #return
+                    print "proc %d exits with error: %d\n" % (proc.pid, rtn_code)
+                    return
             # restore parameters
 
             self.set_parameter("ILAST", ptcl_num)
@@ -667,7 +670,8 @@ class FrealignActoMyosinVirginia(FrealignActin):
         self.set_parameter("angular_step", 30)
         self.set_parameter("max_cycle_search", 50)
         self.set_parameter("max_match_test", 10)
-
+    def set_scratch_dir(self, d):
+        self.frealign.set_scratch_dir(d)
     def add_dataset(self, file_stack, param_file, output_param_file):
         dstep = 14
         target = 90
