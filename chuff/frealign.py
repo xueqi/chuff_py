@@ -10,6 +10,109 @@ import os
 ACTIN_TWIST  = 167.1
 ACTIN_RISE = 27.44
 
+def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scratch_dir = None):
+    '''
+        parallel run frealign
+    '''
+    if temp_dir  is None:
+        import tempfile
+        temp_dir = tempfile.mkdtemp(prefix="frealign")
+    if scratch_dir is None:
+        scratch_dir = os.path.join(workdir, "scratch")
+    if not os.path.exists(scratch_dir):
+        os.makedirs(scratch_dir)
+
+
+    # get filenames
+    frealign_files = {}
+    for keyname in ["F3D", "FPOI", "MAP1", "MAP2", "FWEIGH",
+                    "INPAT1", "INPAT2", "FOUTPAR", "FOUTSH"]:
+        frealign_files = frealign.get_param(keyname)
+    ifirst = frealign.get_param("IFIRST")
+    ilast = frealign.get_param("ILAST")
+    mode = frealign.get_param("mode")
+    num_per_cpu = (ilast - ifirst + 1) / ncpus + 1
+    procs = []
+    par_files = []
+    partial_volume_files = []
+    if mode == 0:
+        frealign.set_parameter("FDUMP", True)
+    for i in range(ncpus):
+        # set temporary files
+        sdir = os.path.join(scratch_dir, "%03d" % i)
+        for keyname, fname in frealign_files:
+            fname1 = os.path.join(sdir, os.path.basename(fname))
+            if keyname == "FOUTPAR":
+                par_files.append(fname1)
+            elif keyname == "F3D":
+                partial_volume_files.append(fname1)
+            frealign.set_parameter(keyname, fname1)
+        # set particle numbers
+
+        first = num_per_cpu * i + ifirst
+        last = num_per_cpu * (i + 1) + ifirst - 1
+        if last > ilast: last = ilast
+        frealign.set_parameter("IFIRST", 1)
+        frealign.set_parameter("ILAST", last - first + 1)
+
+        # run frealign
+        proc = frealign.run(return_proc = True)
+        procs.append(proc)
+    # wait for all proc
+    for proc in procs:
+        proc.wait()
+    if mode == 0:
+        frealign.set_parameter("FDUMP", False)
+    for i in range(ncpus):
+        # mode 0 join volume
+        if mode == 1:
+            join_frealign_parameter(frealign_files["FOUTPAR"], par_files)
+        # mode 1 join parameter
+        elif mode == 0:
+            join_frealign_volume(frealign_files, partial_volume_files)
+
+    for keyname, fname in frealign_files:
+        frealign.set_parameter(keyname, fname)
+
+    frealign.set_parameter("IFIRST", ifirst)
+    frealign.set_parameter("ILAST", ilast)
+
+def join_frealign_parameter(outpar, input_pars, renumber = True):
+    fo = open(outpar,'w')
+    idx = 1
+    for par_file in input_pars:
+        f = open(par_file)
+        lines = [line for line in f.readlines() if not line.strip().startswith("C")]
+        if renumber:
+            for i in range(len(lines)):
+                lines[i] = "%7d" % idx + lines[7:]
+                idx += 1
+        fo.write("".join(lines))
+        f.close()
+    fo.close()
+
+def join_frealign_volume(frealign_files, partial_volume_files):
+    merge_3d_exe = "merge_3d_mp.exe"
+    merge_3d_in = "%d\n" % len(partial_volume_files)
+    for fname in partial_volume_files:
+        merge_3d_in += "%s\n" % fname
+    # write the script
+    merge_3d_in += os.path.splitext(frealign_files["F3D"])[0]  + "_res\n"
+    merge_3d_in += frealign_files["F3D"]  + "\n"
+    merge_3d_in += frealign_files["FWEIGH"]  + "\n"
+    merge_3d_in += frealign_files["MAP1"]  + "\n"
+    merge_3d_in += frealign_files["MAP2"]  + "\n"
+    merge_3d_in += frealign_files["FPHA"]  + "\n"
+    merge_3d_in += frealign_files["FPOI"]  + "\n"
+    script = ""
+    script += "setenv NCPUS %d\n" % len(partial_volume_files)
+    script += "%s << EOF\n" % merge_3d_exe
+    script += merge_3d_in
+    script += "EOF\n"
+    sc = TcshScriptRunner()
+    proc = sc.run_script(script, workdir = os.getcwd())
+    rtn_code = proc.wait()
+    return rtn_code
 class FrealignParameter(object):
     def __init__(self, value = None, name = None, frealign_name = None, param_type = None, sep = ",", float_format = "%7.4f", int_format = "%d"):
         '''
@@ -206,7 +309,7 @@ class FrealignBase(object):
             exc_str += ", ".join([param.name for param in card.params])
             exc_str += "\n"
         raise Exception, exc_str
-    
+
     def get_image_basename(self, fname):
         '''
             get image name without extension
@@ -327,7 +430,7 @@ class Frealign8(FrealignBase):
         self.add_card(card)
 
         self.add_card(self.create_file_name_card("card13", "f3d", "output_volume", "F3D"))
-        self.add_card(self.create_file_name_card("card14", "fweight", "weight_volume", "FWEIGHT"))
+        self.add_card(self.create_file_name_card("card14", "fweight", "weight_volume", "FWEIGH"))
         self.add_card(self.create_file_name_card("card15", "fsc1", "first_half", "MAP1"))
         self.add_card(self.create_file_name_card("card16", "fsc2", "second_haf", "MAP2"))
         self.add_card(self.create_file_name_card("card17", "fpha", "phase_residue_volume", "FPHA"))
@@ -451,12 +554,16 @@ class Frealign9(Frealign8):
         card2 = self.get_card('card2')
         card2.add_param("PSIZE", 0, "molecule_weight", "MW", float)
 
-    def get_param_full_path(self, par, dir = None):
-        return os.path.join(dir, par.split("/")[-1])
-    def get_imagename(self, vol, dir = None, ext = None):
+    def get_param_full_path(self, par, directory = None):
+        if directory is None:
+            directory = os.getcwd()
+        return os.path.join(directory, par.split("/")[-1])
+    def get_imagename(self, vol, directory = None, ext = None):
         '''
-            get file name
+            get file name, represent the true image file in the file system. eg. with extension
         '''
+        if directory is None:
+            directory = os.getcwd()
         cform = self.get_param("CFORM")
         bname, ext1 = os.path.splitext(vol)
         ext1 = ext1[1:]
@@ -525,9 +632,20 @@ class Frealign9(Frealign8):
                 self.set_parameter("IFIRST", ifirst)
                 self.set_parameter("ILAST", ilast)
                 self.set_parameter("F3D", "%s_%d" % (out_vol, i))
+
+                # for each copy of process, we make a copy of all files needed.
+                # The Input particles for each process,
+                # the input volume for each process,
+                # the input parameters for each process,
+                # the output parameter for each process
+
+
+
                 if mode == 0:
+
                     merge_3d_in +="%s_%d.hed\n" % (out_vol, i)
                 elif mode == 1: # split the output par
+
                     self.set_parameter("FOUTPAR", "%s_%d" % (out_par, i))
                     vol.write_image(self.get_imagename("%s_%d" % (out_vol, i)))
                 proc = self.run(background = True, return_proc = True, stdout = open(log_file, 'w'))
@@ -553,7 +671,7 @@ class Frealign9(Frealign8):
                 self.turn_off("FDUMP")
                 merge_3d_in += self.get_param("F3D") + ".res\n"
                 merge_3d_in += self.get_param("F3D") + "\n"
-                merge_3d_in += self.get_param("FWEIGHT") + "\n"
+                merge_3d_in += self.get_param("FWEIGH") + "\n"
                 merge_3d_in += self.get_param("MAP1") + "\n"
                 merge_3d_in += self.get_param("MAP2") + "\n"
                 merge_3d_in += self.get_param("FPHA") + "\n"
@@ -648,7 +766,7 @@ class FrealignActin(FrealignHelical):
         self.setup_files()
     def setup_files(self):
         for paramname, paramvalue in [
-            ("F3D", "vol"), ("FWEIGHT", "weight"),
+            ("F3D", "vol"), ("FWEIGH", "weight"),
             ("MAP1", "fsc1"), ("MAP2", "fsc2"),
             ("FPHA", "fpha"), ("FPOI", "poi")
                                       ]:
@@ -793,8 +911,6 @@ if __name__ == "__main__":
 
         input_params = options.params
         output_root = os.path.join(options.output_dir, os.path.splitext(os.path.basename(input_params))[0])
-
-
 
         d = {
 #            "FINPAR" : os.path.join(os.getcwd(), input_params),
