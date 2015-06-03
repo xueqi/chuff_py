@@ -40,18 +40,26 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
     for i in range(ncpus):
         # set temporary files
         sdir = os.path.join(scratch_dir, "%03d" % i)
+
+        first = num_per_cpu * i + ifirst
+        last = num_per_cpu * (i + 1) + ifirst - 1
+        if last > ilast: last = ilast
         for keyname, fname in frealign_files:
             fname1 = os.path.join(sdir, os.path.basename(fname))
-            if keyname == "FOUTPAR":
+
+            # need to split the input particles
+            if keyname == "FINPAT1":
+                frealign_copy_particles(fname, fname1, start = first, end = last)
+
+            elif keyname == "FOUTPAR":
                 par_files.append(fname1)
+                from shutil import copy
+                copy(fname, fname1)
             elif keyname == "F3D":
                 partial_volume_files.append(fname1)
             frealign.set_parameter(keyname, fname1)
         # set particle numbers
 
-        first = num_per_cpu * i + ifirst
-        last = num_per_cpu * (i + 1) + ifirst - 1
-        if last > ilast: last = ilast
         frealign.set_parameter("IFIRST", 1)
         frealign.set_parameter("ILAST", last - first + 1)
 
@@ -76,6 +84,16 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
 
     frealign.set_parameter("IFIRST", ifirst)
     frealign.set_parameter("ILAST", ilast)
+
+def frealign_copy_particles(src, dst, start = -1, end = -1):
+    import subprocess
+    args = ["e2proc2d.py", src, dst]
+    if start >= 0:
+        args.append('--first=%d' % start)
+    if end >=0 and end >= start:
+        args.append('--last=%d' % end)
+    proc = subprocess.Popen(args)
+    return proc.wait()
 
 def join_frealign_parameter(outpar, input_pars, renumber = True):
     fo = open(outpar,'w')
