@@ -11,6 +11,14 @@ from shutil import copy
 ACTIN_TWIST  = 167.1
 ACTIN_RISE = 27.44
 
+class FrealignException(Exception):
+    def __init__(self, frealign, exc_str):
+        self.exc_str = exc_str
+        self.frealign = frealign
+
+    def __str__(self):
+        return "Frealign Exception: %s" % self.exc_str
+
 def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scratch_dir = None):
     '''
         parallel run frealign
@@ -23,11 +31,16 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
     if not os.path.exists(scratch_dir):
         os.makedirs(scratch_dir)
 
+    #frealign.check_parameters()
 
     # get filenames
+
+    # mode 0 will overwrite FWEIGH, MAP1, MAP2, FPOI, F3D, 
+    # mode 1 will overwrite FOUTPAR, FOUTSH
+
     frealign_files = {}
     for keyname in ["F3D", "FPOI", "MAP1", "MAP2", "FWEIGH", "FINPAR",
-                    "FINPAT1", "FINPAT2", "FOUTPAR", "FOUTSH"]:
+                    "FINPAT1", "FINPAT2", "FOUTPAR", "FOUTSH", "FPHA"]:
         frealign_files[keyname] = frealign.get_param(keyname)
         print  keyname, frealign.get_param(keyname)
     ifirst = frealign.get_param("IFIRST")
@@ -53,10 +66,12 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
             print "copying to %s" % fname1
             if i == 0:
                 if not os.path.exists(fname1):
-                    copy_volume(fname, fname1)
+                    if copy_volume(fname, fname1, skip_same_size = True) != 0:
+                        raise FrealignException(frealign, "Copy volume %s" % fname1)
             else:
                 if not os.path.exists(fname1):
-                    copy_volume(os.path.join(os.path.join(scratch_dir, "000" ), os.path.basename(fname)), fname1)
+                    if copy_volume(os.path.join(os.path.join(scratch_dir, "000" ), os.path.basename(fname)), fname1, skip_same_size = True) != 0:
+                        raise FrealignException(frealign, "Copy volume %s" % fname1)
     data = None         
     for i in range(ncpus):
         # set temporary files
@@ -81,7 +96,11 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
                 print fname, fname1
                 copy_param(fname, fname1, start = first, end=last, renumber = True)
             elif keyname == "F3D":
-                partial_volume_files.append(fname1)
+                if frealign.get_param("CFORM") == "I":
+                    dump_file = "%s.hed" % os.path.splitext(fname1)[0]
+                else:
+                    dump_file = fname1
+                partial_volume_files.append(dump_file)
             frealign.set_parameter(keyname, fname1)
         # set particle numbers
 
@@ -93,19 +112,26 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
         proc = frealign.run(return_proc = True, stdout = open(logfile,'w'), background = True)
         procs.append(proc)
     # wait for all proc
-    for proc in procs:
-        proc.wait()
+    for i in range(ncpus):
+        proc = procs[i]
+        rtn_code = proc.wait()
+        if rtn_code != 0:
+            print "Error with proc :%d" % proc.id
+        # remove unnecessary files. FWEIGH, MAP1, MAP2 are always useless
+        sdir = os.path.join(scratch_dir, "%03d" % i)
+        for keyname in ["FWEIGH", "MAP1", "MAP2"]:
+            fname = frealign.get_imagename(frealign_files[keyname])
+            fname1 = os.path.join(sdir, os.path.basename(fname))
+            remove_volume(fname1)
+
     if mode == 0:
         frealign.set_parameter("FDUMP", False)
-    for i in range(ncpus):
-        # mode 0 join volume
-        if mode == 1:
-            join_frealign_parameter(frealign_files["FOUTPAR"], par_files)
-        # mode 1 join parameter
-        elif mode == 0:
-            join_frealign_volume(frealign_files, partial_volume_files)
-
-    for keyname, fname in frealign_files:
+        join_frealign_volume(frealign_files, partial_volume_files)
+    elif mode == 1:
+        join_frealign_parameter(frealign_files["FOUTPAR"], par_files)
+    
+    # restore file parameters
+    for keyname, fname in frealign_files.items():
         frealign.set_parameter(keyname, fname)
 
     frealign.set_parameter("IFIRST", ifirst)
@@ -119,48 +145,47 @@ def copy_param(fname, fname1, start, end = -1, renumber = True):
         for i in range(start - 1, end):
             lines[i] = "%7d" % (i - start + 2) + lines[i][7:]
     open(fname1,'w').write("".join(lines[start - 1:end]))
-def copy_volume(src, dst):
-    if src.endswith("img") or src.endswith('hed'):
-        bname = os.path.splitext(src)[0]
-        d_bname =os.path.splitext(dst)[0]
-        copy("%s.hed" % bname, "%s.hed" % d_bname)
-        copy("%s.img" % bname, "%s.img" % d_bname)
+def remove_volume(volname):
+    import os
+    if volname.endswith("img") or volname.endswith('hed'):
+        bname = os.path.splitext(volname)[0]
+        hed = "%s.hed" % bname
+        img = "%s.img" % bname
+        try:
+            os.remove(hed)
+            os.remove(img)
+        except:
+            pass
     else:
-        copy(src, dst)
-def frealign_copy_particles(src, dst, start = -1, end = -1):
-    if src.endswith("img") or src.endswith("hed"): # imagic file
-        from EMAN2 import EMData, EMUtil
-        d = EMData()
-        d.read_image(src, 0, True)
-        bs = d.get_xsize()
-        hed = "%s.hed" % os.path.splitext(src)[0]
-        img = "%s.img" % os.path.splitext(src)[0]
-        d_hed = "%s.hed" % os.path.splitext(dst)[0]
-        d_img = "%s.img" % os.path.splitext(dst)[0]
-        if start == -1: start = 1
-        h_offset = (start - 1) * 1024
-        i_offset = (start - 1) * bs * bs * 4
-        nptcls = EMUtil.get_image_count(src)
-        if end == -1 or end > nptcls:
-            end = nptcls
-        nptcls = end - start + 1
-        h_size = nptcls * 1024
-        i_size = bs * bs * 4 * nptcls
-        fhed,fimg = open(hed), open(img)
-        fhed.seek(h_offset)
-        fimg.seek(i_offset)
-        open(d_hed,'w').write(fhed.read(h_size))
-        open(d_img,'w').write(fimg.read(i_size))
-        fhed.close()
-        fimg.close()
+        try:
+            os.remove(volname)
+        except:
+            pass
+def copy_volume(src, dst, skip_same_size = False):
+    try:
+        if src.endswith("img") or src.endswith('hed'):
+            bname = os.path.splitext(src)[0]
+            d_bname =os.path.splitext(dst)[0]
+            if not (os.path.exists("%s.hed" % d_bname) and os.path.getsize("%s.hed" % bname) ==  os.path.getsize("%s.hed" %d_bname) and skip_same_size):
+                copy("%s.hed" % bname, "%s.hed" % d_bname)
+            if not (os.path.exists("%s.img" % d_bname) and os.path.getsize("%s.img" % bname) ==  os.path.getsize("%s.img" %d_bname) and skip_same_size):
+                copy("%s.img" % bname, "%s.img" % d_bname)
+        else:
+            if not (os.path.exists(dst) and os.path.getsize(src) == os.path.getsize(dst) and skip_same_size):
+                copy(src, dst)
         return 0
+    except:
+        import sys
+        print sys.exc_info()
+        return 1
+def frealign_copy_particles(src, dst, start = -1, end = -1):
     import subprocess
     print src, dst
     args = ["e2proc2d.py", src, dst]
     if start >= 0:
-        args.append('--first=%d' % start)
+        args.append('--first=%d' % (start - 1))
     if end >=0 and end >= start:
-        args.append('--last=%d' % end)
+        args.append('--last=%d' % (end -1))
     proc = subprocess.Popen(args)
     return proc.wait()
 
@@ -172,7 +197,7 @@ def join_frealign_parameter(outpar, input_pars, renumber = True):
         lines = [line for line in f.readlines() if not line.strip().startswith("C")]
         if renumber:
             for i in range(len(lines)):
-                lines[i] = "%7d" % idx + lines[7:]
+                lines[i] = "%7d" % idx + lines[i][7:]
                 idx += 1
         fo.write("".join(lines))
         f.close()
