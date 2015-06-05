@@ -116,3 +116,17 @@ if __name__ == "__main__":
     dds1 = np.array([x1 * dp + random.randint(-8, 15) * 1.0 for x1 in x])
     A0 = np.arange(len(dds1))
     fit_integer(dds1, 20)
+
+    #def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise = 27.44):
+
+    import sys
+
+    align_param = sys.argv[1]
+    box_file = sys.argv[2]
+    aligns = open(align_param).read().strip().split("\n")
+    aligns = [[float(m) for m in align.split()[:5]] for align in aligns]
+    boxes = open(box_file).read().strip().split("\n")
+    boxes = [[float(m) for m in box.split()[2:6]] for box in boxes if box.strip() and not box.strip().startswith(";")]
+    ori_xys = [box[:2] for box in boxes]
+    ori_psis = [box[4]  for box in boxes]
+    trace_helix(aligns, ori_psis, boxes)
