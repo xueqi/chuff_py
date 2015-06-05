@@ -57,7 +57,7 @@ def run_parallel_frealign(frealign, ncpus = 4, workdir = ".", temp_dir=None, scr
             else:
                 if not os.path.exists(fname1):
                     copy_volume(os.path.join(os.path.join(scratch_dir, "000" ), os.path.basename(fname)), fname1)
-    data = None         
+    data = None
     for i in range(ncpus):
         # set temporary files
         sdir = os.path.join(scratch_dir, "%03d" % i)
@@ -636,7 +636,21 @@ class Frealign9(Frealign8):
         card1.add_param(None, False, "dump_partial_volume", "FDUMP", bool)
         card1.add_param(None, 0, "memory_usage", "IMEM", int)
         card1.add_param(None, 0, "interpolation_scheme", "INTERP", int)
-
+#===============================================================================
+# IMEM    0/1/2/3 Memory usage: 0 = least memory, 3 = most memory.
+#                 0 - no padding of reference during refinement, no multi-volume
+#                 parallelization during reconstruction (least memory usage)
+#                 1 - padding of reference during refinement, no multi-volume
+#                 parallelization during reconstruction
+#                 2 - no padding of reference during refinement, multi-volume
+#                 parallelization during reconstruction
+#                 3 - padding of reference during refinement, multi-volume
+#                 parallelization during reconstruction (most memory usage)
+#
+# INTERP  0/1 Interpolation scheme used for 3D reconstruction:
+#         0 = Nearest neighbor
+#         1 = Trilinear (more time-consuming)
+#===============================================================================
         # card2
         card2 = self.get_card('card2')
         card2.add_param("PSIZE", 0, "molecule_weight", "MW", float)
