@@ -1,6 +1,9 @@
 import math
+import os
+from matplotlib import pyplot as plt
 
-def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise = 27.44):
+def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise = 27.44, apix = 1.08714):
+
     '''
         trace a helix, correct the align parameters according to the helical parameter
         default to actin filament.
@@ -32,7 +35,7 @@ def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise =
         d2 = (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)
         dds.append(math.sqrt(d2))
     dxs, dys = zip(*[undo_shift(dxs[i], dys[i], ori_psis[i]) for i in range(len(dxs))])
-    fit(dds, angs, phi_diffs, helical_twist, helical_rise)
+    fit(dds, angs, phi_diffs, helical_twist, helical_rise / apix)
 
 def window_smooth(arr, window_size):
     import numpy as np
@@ -51,6 +54,7 @@ def fit(dds, angs, phi_diffs, helical_twist, helical_rise):
             pass
         else:
             dds1[i] = dds1[i] / sin(ang) * ang
+    dds1 = dds[:]
     for i in range(1, len(dds1)):
         dds1[i] = dds1[i - 1] + dds[i]
     ints, slope, c = fit_integer(dds1, helical_rise)
@@ -72,15 +76,39 @@ def fit_integer(dds, dp):
     B = np.array(dds[:])
     oldA0 = A0
     slope, c = 0, 0
-    for i in range(10):
-        A = np.vstack([A0, np.ones(len(dds1))]).T
+    plt.clf()
+    for i in range(20):
+        A = np.vstack([A0, np.ones(len(dds))]).T
         slope, c = np.linalg.lstsq(A, B)[0]
-        slope = (slope + dp) / 2
+        oslope = slope
+#        slope = slope - (slope - dp)  / 2
+        print slope,dp
         A0 = ( B - c) / slope
         A0 = np.rint(A0)
         diff = A0 - oldA0
-        if len(np.unique(diff)) == 1: break
+        if len(np.unique(diff)) == 1: 
+            break
         oldA0 = A0
+#        plt.plot(A0, dds,'o-')
+    diffs = B - ( A0 * slope + c)
+    diff_grad = np.gradient(diffs)
+    plt.plot(np.arange(len(diff_grad)), diff_grad)
+    mean, stdv = diff_grad.mean(), diff_grad.std()
+    offset = 0
+    for i in range(1,len(diff_grad)):
+        if diff_grad[i] - diff_grad[i - 1] > stdv:
+            offset += 1
+            print offset
+        A0[i] -= offset
+    A = np.vstack([A0, np.ones(len(A0))]).T
+    slope, c = np.linalg.lstsq(A, B)[0]
+    print slope, c
+    print A0
+#    plt.plot([0,max(A0)], [c, c + max(A0) * slope])
+    plt.plot(A0, B - A0 * slope - c, 'o')
+    plt.savefig('test.png')
+
+    os.system('convert test.png test.jpg')
     return A0, slope, c
 def undo_shift(dx, dy, psi):
     '''
