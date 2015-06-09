@@ -12,7 +12,7 @@ def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise =
     # phi[i] = (phi[0] + i * dphi ) % 360 = (phi[i - 1] + dphi) % 360
     # y[i] = y[0] + i * dp = y[i - 1] + dp
 
-    dxs, dys, phis, thetas, psis = zip(aligns)[:5]
+    phis, thetas, psis, dxs, dys= zip(*aligns)[:5]
     N = len(dxs)
     angs = [0 for _ in range(N)]
     rs = [0 for _ in range(N)]
@@ -21,7 +21,6 @@ def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise =
         angs[i], rs[i] = get_curvature(phis[i], thetas[i], psis[i], phis[i-1], thetas[i-1], psis[i-1], helical_rise)
         phi_diffs[i] = phis[i] - phis[i-1]
     angs = window_smooth(angs, 5)
-    dxs, dys = zip([undo_shift(dxs[i], dys[i], ori_psis[i]) for i in range(len(dxs))])
     new_xys = []
     for i in range(len(ori_xys)):
         new_xys.append([ori_xys[i][0] + dxs[i], ori_xys[i][1] + dys[i]])
@@ -32,13 +31,14 @@ def trace_helix(aligns, ori_psis, ori_xys, helical_twist = 167.1, helical_rise =
         x0, y0 = new_xys[i-1]
         d2 = (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)
         dds.append(math.sqrt(d2))
+    dxs, dys = zip(*[undo_shift(dxs[i], dys[i], ori_psis[i]) for i in range(len(dxs))])
     fit(dds, angs, phi_diffs, helical_twist, helical_rise)
 
 def window_smooth(arr, window_size):
     import numpy as np
 
     weights = np.repeat(1.0, window_size) / window_size
-    nma = np.convolve(arr, weights, 'valid')
+    nma = np.convolve(arr, weights, 'same')
     return nma.tolist()
 
 def fit(dds, angs, phi_diffs, helical_twist, helical_rise):
@@ -47,7 +47,10 @@ def fit(dds, angs, phi_diffs, helical_twist, helical_rise):
     dds1  = dds[:]
     for i in range(1, len(dds1)):
         ang = angs[i] * pi / 180.
-        dds1[i] = dds1[i] / sin(ang) * ang
+        if ang == 0 or ang == 180 or ang == 360:
+            pass
+        else:
+            dds1[i] = dds1[i] / sin(ang) * ang
     for i in range(1, len(dds1)):
         dds1[i] = dds1[i - 1] + dds[i]
     ints, slope, c = fit_integer(dds1, helical_rise)
@@ -105,7 +108,10 @@ def get_curvature(phi1, theta1, psi1, phi2, theta2, psi2, dp):
     a22 = sum([aa * aa for aa in a2])
     ca = (a1[0] * a2[0] + a1[1] * a2[1] + a1[2] * a2[2]) / sqrt(a12 * a22)
     ang = acos(ca) / pi1
-    r = dp / (2 * ang)
+    if ang == 0:
+        r = float('inf')
+    else:
+        r = dp / (2 * ang)
     return ang, r
 
 if __name__ == "__main__":
@@ -128,5 +134,5 @@ if __name__ == "__main__":
     boxes = open(box_file).read().strip().split("\n")
     boxes = [[float(m) for m in box.split()[2:6]] for box in boxes if box.strip() and not box.strip().startswith(";")]
     ori_xys = [box[:2] for box in boxes]
-    ori_psis = [box[4]  for box in boxes]
-    trace_helix(aligns, ori_psis, boxes)
+    ori_psis = [box[3]  for box in boxes]
+    trace_helix(aligns, ori_psis, ori_xys)
