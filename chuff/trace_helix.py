@@ -79,6 +79,7 @@ def fit_integer(dds, dp):
         if len(np.unique(diff)) == 1: break
         oldA0 = A0
     return A0, slope, c
+
 def undo_shift(dx, dy, psi):
     '''
         psi in counterclockwise, from original to dx,dy
